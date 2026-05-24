@@ -1,0 +1,247 @@
+{
+  "timestamp": "2026-05-24T13:41:50.131557+00:00",
+  "project_name": "Planity Clone",
+  "completion_percentage": 75.0,
+  "done": [
+    {
+      "name": "User Authentication",
+      "status": "done",
+      "details": "Marked done with evidence in 10 related files",
+      "files_involved": [
+        "apps/api/src/users/users.module.ts",
+        "apps/api/src/users/users.service.ts",
+        "apps/api/src/auth/decorators/current-user.decorator.ts",
+        "apps/api/src/auth/types/authenticated-user.type.ts",
+        "apps/api/dist/apps/api/src/users/users.controller.d.ts",
+        "apps/api/dist/apps/api/src/users/users.controller.js",
+        "apps/api/dist/apps/api/src/users/users.controller.js.map",
+        "apps/api/dist/apps/api/src/users/users.module.d.ts",
+        "apps/api/dist/apps/api/src/users/users.module.js",
+        "apps/api/dist/apps/api/src/users/users.module.js.map"
+      ]
+    },
+    {
+      "name": "Guest Browse & Explore",
+      "status": "done",
+      "details": "Marked done with evidence in 0 related files",
+      "files_involved": []
+    },
+    {
+      "name": "Business Search & Discovery",
+      "status": "done",
+      "details": "Marked done with evidence in 10 related files",
+      "files_involved": [
+        "apps/mobile/src/features/search/components/BusinessCard.tsx",
+        "apps/mobile/src/features/business/pages/BusinessDetailScreen.tsx",
+        "apps/mobile/src/application/query/hooks/useBusinessDetailQuery.ts",
+        "apps/mobile/src/application/query/hooks/useBusinessesSearchQuery.ts",
+        "apps/api/src/businesses/businesses.controller.ts",
+        "apps/api/src/businesses/businesses.module.ts",
+        "apps/api/src/businesses/businesses.service.spec.ts",
+        "apps/api/src/businesses/businesses.service.ts",
+        "apps/api/src/businesses/dto/create-business.dto.ts",
+        "apps/api/dist/apps/api/src/businesses/businesses.controller.d.ts"
+      ]
+    },
+    {
+      "name": "Map-based Search",
+      "status": "done",
+      "details": "Marked done with evidence in 0 related files",
+      "files_involved": []
+    },
+    {
+      "name": "Business Detail View",
+      "status": "done",
+      "details": "Marked done with evidence in 10 related files",
+      "files_involved": [
+        "apps/mobile/src/features/search/components/BusinessCard.tsx",
+        "apps/mobile/src/features/business/pages/BusinessDetailScreen.tsx",
+        "apps/mobile/src/application/query/hooks/useBusinessDetailQuery.ts",
+        "apps/mobile/src/application/query/hooks/useBusinessesSearchQuery.ts",
+        "apps/api/src/businesses/businesses.controller.ts",
+        "apps/api/src/businesses/businesses.module.ts",
+        "apps/api/src/businesses/businesses.service.spec.ts",
+        "apps/api/src/businesses/businesses.service.ts",
+        "apps/api/src/businesses/dto/create-business.dto.ts",
+        "apps/api/dist/apps/api/src/businesses/businesses.controller.d.ts"
+      ]
+    },
+    {
+      "name": "Service Categories",
+      "status": "done",
+      "details": "Marked done with evidence in 10 related files",
+      "files_involved": [
+        "docs/user-roadmap/step-06-pick-a-service.md",
+        "apps/mobile/src/features/search/components/ServiceFilters.tsx",
+        "apps/mobile/src/features/search/components/ServiceSelection.tsx",
+        "apps/mobile/src/features/search/services/addressService.ts",
+        "apps/mobile/src/features/search/services/viewportService.ts",
+        "apps/mobile/src/features/booking/components/AddServiceModal.tsx",
+        "apps/mobile/src/features/booking/components/BookingServiceList.tsx",
+        "apps/mobile/src/application/query/hooks/useServiceCategoriesQuery.ts",
+        "apps/api/src/appointments/appointments.service.spec.ts",
+        "apps/api/src/appointments/appointments.service.ts"
+      ]
+    },
+    {
+      "name": "Booking Flow",
+      "status": "done",
+      "details": "Marked done with evidence in 10 related files",
+      "files_involved": [
+        "docs/TEST_BOOKING_TOULOUSE.md",
+        "packages/shared/src/utils/bookingPayload.ts",
+        "docs/user-roadmap/step-12-manage-bookings.md",
+        "apps/mobile/app/booking-validation.tsx",
+        "apps/mobile/app/booking.tsx",
+        "apps/mobile/src/features/bookings/pages/BookingsScreen.tsx",
+        "apps/mobile/src/features/booking/components/BookingDatePicker.tsx",
+        "apps/mobile/src/features/booking/components/BookingFooter.tsx",
+        "apps/mobile/src/features/booking/components/BookingHeader.tsx",
+        "apps/mobile/src/features/booking/components/BookingProgressBar.tsx"
+      ]
+    },
+    {
+      "name": "Appointment Management",
+      "status": "done",
+      "details": "Marked done with evidence in 10 related files",
+      "files_involved": [
+        "packages/shared/src/utils/appointmentStatus.ts",
+        "docs/user-roadmap/step-14-after-appointment.md",
+        "apps/mobile/src/features/bookings/pages/AppointmentDetailScreen.tsx",
+        "apps/mobile/src/application/query/hooks/useAppointmentsUpcomingQuery.ts",
+        "apps/api/src/appointments/appointments.controller.ts",
+        "apps/api/src/appointments/appointments.module.ts",
+        "apps/api/src/appointments/appointments.service.spec.ts",
+        "apps/api/src/appointments/appointments.service.ts",
+        "apps/api/src/appointments/dto/cancel-appointment.dto.ts",
+        "apps/api/src/appointments/dto/create-appointment.dto.ts"
+      ]
+    },
+    {
+      "name": "Favorites",
+      "status": "done",
+      "details": "Marked done with evidence in 7 related files",
+      "files_involved": [
+        "docs/user-roadmap/step-13-favorites.md",
+        "apps/mobile/src/features/favorites/pages/FavoritesScreen.tsx",
+        "apps/mobile/src/application/providers/favorites/FavoritesContext.tsx",
+        "apps/mobile/app/(main)/favorites.tsx",
+        "apps/api/src/favorites/favorites.controller.ts",
+        "apps/api/src/favorites/favorites.module.ts",
+        "apps/api/src/favorites/favorites.service.ts"
+      ]
+    },
+    {
+      "name": "Availability & Slot Computation",
+      "status": "done",
+      "details": "Marked done with evidence in 10 related files",
+      "files_involved": [
+        "apps/api/src/availability/availability.controller.ts",
+        "apps/api/src/availability/availability.module.ts",
+        "apps/api/src/availability/availability.service.spec.ts",
+        "apps/api/src/availability/availability.service.ts",
+        "apps/api/dist/apps/api/src/availability/availability.controller.d.ts",
+        "apps/api/dist/apps/api/src/availability/availability.controller.js",
+        "apps/api/dist/apps/api/src/availability/availability.controller.js.map",
+        "apps/api/dist/apps/api/src/availability/availability.module.d.ts",
+        "apps/api/dist/apps/api/src/availability/availability.module.js",
+        "apps/api/dist/apps/api/src/availability/availability.module.js.map"
+      ]
+    },
+    {
+      "name": "Shared Types & Design System",
+      "status": "done",
+      "details": "Marked done with evidence in 10 related files",
+      "files_involved": [
+        "apps/mobile/android/app/build/intermediates/stripped_native_libs/debug/stripDebugDebugSymbols/out/lib/arm64-v8a/libc++_shared.so",
+        "apps/mobile/android/app/build/intermediates/stripped_native_libs/debug/stripDebugDebugSymbols/out/lib/armeabi-v7a/libc++_shared.so",
+        "apps/mobile/android/app/build/intermediates/stripped_native_libs/debug/stripDebugDebugSymbols/out/lib/x86/libc++_shared.so",
+        "apps/mobile/android/app/build/intermediates/stripped_native_libs/debug/stripDebugDebugSymbols/out/lib/x86_64/libc++_shared.so",
+        "apps/mobile/android/app/build/intermediates/merged_native_libs/debug/mergeDebugNativeLibs/out/lib/arm64-v8a/libc++_shared.so",
+        "apps/mobile/android/app/build/intermediates/merged_native_libs/debug/mergeDebugNativeLibs/out/lib/armeabi-v7a/libc++_shared.so",
+        "apps/mobile/android/app/build/intermediates/merged_native_libs/debug/mergeDebugNativeLibs/out/lib/x86/libc++_shared.so",
+        "apps/mobile/android/app/build/intermediates/merged_native_libs/debug/mergeDebugNativeLibs/out/lib/x86_64/libc++_shared.so",
+        "apps/mobile/android/app/build/intermediates/cxx/Debug/4b3g1m4f/obj/arm64-v8a/libc++_shared.so",
+        "apps/mobile/android/app/build/intermediates/cxx/Debug/4b3g1m4f/obj/armeabi-v7a/libc++_shared.so"
+      ]
+    }
+  ],
+  "partial": [
+    {
+      "name": "User Profile",
+      "status": "partial",
+      "details": "Partial implementation in ['apps/api/src/users/users.module.ts', 'apps/api/src/users/users.service.ts', 'apps/api/src/auth/decorators/current-user.decorator.ts']",
+      "files_involved": [
+        "apps/api/src/users/users.module.ts",
+        "apps/api/src/users/users.service.ts",
+        "apps/api/src/auth/decorators/current-user.decorator.ts",
+        "apps/api/src/auth/types/authenticated-user.type.ts",
+        "apps/api/dist/apps/api/src/users/users.controller.d.ts",
+        "apps/api/dist/apps/api/src/users/users.controller.js",
+        "apps/api/dist/apps/api/src/users/users.controller.js.map",
+        "apps/api/dist/apps/api/src/users/users.module.d.ts",
+        "apps/api/dist/apps/api/src/users/users.module.js",
+        "apps/api/dist/apps/api/src/users/users.module.js.map"
+      ]
+    },
+    {
+      "name": "Reviews & Ratings",
+      "status": "partial",
+      "details": "Partial implementation in ['apps/mobile/src/features/search/components/SalonReviews.tsx']",
+      "files_involved": [
+        "apps/mobile/src/features/search/components/SalonReviews.tsx"
+      ]
+    },
+    {
+      "name": "Payment Integration",
+      "status": "partial",
+      "details": "Found related files: ['docs/user-roadmap/step-10-payment-or-deposit.md']",
+      "files_involved": [
+        "docs/user-roadmap/step-10-payment-or-deposit.md"
+      ]
+    },
+    {
+      "name": "Provider / Business Owner Portal",
+      "status": "partial",
+      "details": "Found related files: ['apps/mobile/src/application/providers/AppProviders.tsx']",
+      "files_involved": [
+        "apps/mobile/src/application/providers/AppProviders.tsx"
+      ]
+    },
+    {
+      "name": "Background Jobs (BullMQ)",
+      "status": "partial",
+      "details": "Found related files: ['apps/mobile/android/app/src/main/res/drawable/ic_launcher_background.xml', 'apps/mobile/android/app/build/intermediates/packaged_res/debug/packageDebugResources/drawable/ic_launcher_background.xml', 'apps/mobile/android/app/build/intermediates/merged_res/debug/mergeDebugResources/drawable_ic_launcher_background.xml.flat']",
+      "files_involved": [
+        "apps/mobile/android/app/src/main/res/drawable/ic_launcher_background.xml",
+        "apps/mobile/android/app/build/intermediates/packaged_res/debug/packageDebugResources/drawable/ic_launcher_background.xml",
+        "apps/mobile/android/app/build/intermediates/merged_res/debug/mergeDebugResources/drawable_ic_launcher_background.xml.flat"
+      ]
+    }
+  ],
+  "missing": [
+    {
+      "name": "Notifications",
+      "status": "missing",
+      "details": "No implementation files found",
+      "files_involved": []
+    },
+    {
+      "name": "Admin Dashboard",
+      "status": "missing",
+      "details": "No implementation files found",
+      "files_involved": []
+    }
+  ],
+  "bugs": [],
+  "next_priorities": [
+    "Payment Integration",
+    "Provider / Business Owner Portal",
+    "Stripe or offline payment checkout flow",
+    "Email and push notification delivery",
+    "Admin dashboard (Next.js)",
+    "Provider/business owner management portal",
+    "Full reviews CRUD and moderation backend"
+  ],
+  "raw_summary": "Planity Clone: 75% complete. 11 done, 5 partial, 2 missing, 0 bug indicators."
+}

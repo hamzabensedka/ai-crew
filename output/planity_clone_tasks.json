@@ -1,0 +1,346 @@
+[
+  {
+    "task_id": "po_product_spec",
+    "title": "Write Product Specification",
+    "description": "Create a complete product specification for Planity Clone. Cover all features: ['User Authentication', 'Guest Browse & Explore', 'Business Search & Discovery', 'Map-based Search', 'Business Detail View', 'Service Categories', 'Booking Flow', 'Appointment Management', 'Favorites', 'User Profile', 'Availability & Slot Computation', 'Shared Types & Design System', 'Reviews & Ratings', 'Payment Integration', 'Notifications', 'Provider / Business Owner Portal', 'Admin Dashboard', 'Background Jobs (BullMQ)']",
+    "assigned_agent_role": "product_owner",
+    "depends_on": [],
+    "output_format": "file",
+    "output_path": "docs/product.md",
+    "expected_output": "Complete product.md with features, acceptance criteria, and priorities",
+    "context_files": []
+  },
+  {
+    "task_id": "arch_design",
+    "title": "Design Architecture",
+    "description": "Design system architecture for Planity Clone using ['Expo', 'React Native', 'TypeScript', 'Expo Router', 'TanStack React Query', 'React Native Reanimated', 'NestJS', 'Prisma', 'PostgreSQL', 'PostGIS', 'Redis']. Create folder scaffold.",
+    "assigned_agent_role": "architect",
+    "depends_on": [
+      "po_product_spec"
+    ],
+    "output_format": "file",
+    "output_path": "docs/architecture.md",
+    "expected_output": "Complete architecture.md with folder structure and service boundaries",
+    "context_files": [
+      "docs/product.md"
+    ]
+  },
+  {
+    "task_id": "po_create_product_doc",
+    "title": "Create Product Requirements Document",
+    "description": "Write a comprehensive product requirements document (docs/product.md) covering all features, user stories, acceptance criteria, and prioritization for the Planity Clone MVP. Include feature descriptions, user flows for guest browsing, booking, and authentication, and note planned but not implemented items.",
+    "assigned_agent_role": "product_owner",
+    "depends_on": [],
+    "output_format": "markdown",
+    "output_path": "docs/product.md",
+    "expected_output": "A markdown file with full product requirements, user stories, and acceptance criteria for all features.",
+    "context_files": []
+  },
+  {
+    "task_id": "arch_create_architecture_doc",
+    "title": "Create Architecture Document and Folder Scaffold",
+    "description": "Design the system architecture for the Planity Clone MVP. Create docs/architecture.md covering: Nx monorepo structure, Expo React Native frontend, NestJS + Prisma + PostgreSQL backend, PostGIS for geo queries, Redis for caching, JWT auth flow, API design patterns, and data models. Also scaffold the folder structure: apps/mobile, apps/api, packages/shared, packages/ui, libs/*. Include decision records for tech choices.",
+    "assigned_agent_role": "architect",
+    "depends_on": [
+      "po_create_product_doc"
+    ],
+    "output_format": "markdown",
+    "output_path": "docs/architecture.md",
+    "expected_output": "Architecture document and initial folder scaffold committed to the repository.",
+    "context_files": [
+      "docs/product.md"
+    ]
+  },
+  {
+    "task_id": "arch_setup_nx_monorepo",
+    "title": "Initialize Nx Monorepo with Dependencies",
+    "description": "Set up the Nx monorepo using pnpm. Initialize workspace with apps/mobile (Expo), apps/api (NestJS), packages/shared, packages/ui. Install core dependencies: Expo, React Native, NestJS, Prisma, PostgreSQL client, Redis client, TanStack React Query, React Native Reanimated, Expo Router. Configure TypeScript paths and Nx project.json files for each app/lib.",
+    "assigned_agent_role": "architect",
+    "depends_on": [
+      "arch_create_architecture_doc"
+    ],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Fully initialized Nx monorepo with all dependencies installed and basic project scaffolding.",
+    "context_files": [
+      "docs/architecture.md"
+    ]
+  },
+  {
+    "task_id": "backend_setup_nestjs_prisma",
+    "title": "Setup NestJS Backend with Prisma and PostgreSQL",
+    "description": "Initialize NestJS app in apps/api. Configure Prisma with PostgreSQL and PostGIS extension. Create initial schema: User (with roles client, provider, admin), Business (with location point), Service, ServiceCategory, Appointment, Availability, Review, Favorite. Implement JWT auth module with register, login, logout, refresh token endpoints. Add role-based guards. Set up Redis caching module.",
+    "assigned_agent_role": "backend_developer",
+    "depends_on": [
+      "arch_setup_nx_monorepo",
+      "arch_design"
+    ],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "NestJS app with Prisma schema, auth endpoints, and Redis cache module working.",
+    "context_files": [
+      "docs/architecture.md",
+      "docs/product.md"
+    ]
+  },
+  {
+    "task_id": "backend_business_search_api",
+    "title": "Build Business Search and Discovery API",
+    "description": "Implement API endpoints for business search and discovery: GET /businesses with text search, location-based filtering (PostGIS ST_DWithin), filter pills (distance, rating, price, availability), pagination. GET /businesses/:id with full details including services, staff, reviews. GET /businesses/map for viewport-based geo queries. Add address autocomplete endpoint.",
+    "assigned_agent_role": "backend_developer",
+    "depends_on": [
+      "backend_setup_nestjs_prisma",
+      "arch_design"
+    ],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Working business search, detail, and map API endpoints with PostGIS support.",
+    "context_files": [
+      "docs/architecture.md",
+      "docs/product.md"
+    ]
+  },
+  {
+    "task_id": "shared_create_types_design_system",
+    "title": "Create Shared Types and UI Design System",
+    "description": "In packages/shared, define TypeScript types/enums for: User, Business, Service, Appointment, Review, Favorite, PaymentProvider, PaymentStatus, NotificationChannel, pagination, booking utils. In packages/ui, create design tokens (colors, typography, spacing) and base components (Button, Card, Input, Modal, BottomSheet) with Apple-style theme. Export for mobile use.",
+    "assigned_agent_role": "frontend_developer",
+    "depends_on": [
+      "arch_setup_nx_monorepo",
+      "arch_design"
+    ],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Shared types package and UI component library with design tokens.",
+    "context_files": [
+      "docs/architecture.md",
+      "docs/product.md"
+    ]
+  },
+  {
+    "task_id": "frontend_explore_search_map",
+    "title": "Build Explore, Search, and Map Screens",
+    "description": "Create Explore tab (default route) showing salon cards without auth. Implement search screen with text input, address suggestions, filter pills (distance, rating, price, availability). Build map search screen with React Native Maps, viewport-based queries, and bottom card UI. Use TanStack Query for API data fetching.",
+    "assigned_agent_role": "frontend_developer",
+    "depends_on": [
+      "backend_business_search_api",
+      "shared_create_types_design_system",
+      "arch_design"
+    ],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Working Explore, Search, and Map screens with guest access.",
+    "context_files": [
+      "docs/product.md"
+    ]
+  },
+  {
+    "task_id": "backend_booking_availability_api",
+    "title": "Build Booking and Availability API",
+    "description": "Implement appointment and availability APIs: GET /businesses/:id/availability with date range, configurable slot steps, Redis caching, overlap exclusion. POST /appointments for booking with service, staff, time slot. GET /appointments for user's bookings. DELETE /appointments/:id for cancellation. Add validation for business hours and existing appointments.",
+    "assigned_agent_role": "backend_developer",
+    "depends_on": [
+      "backend_setup_nestjs_prisma",
+      "arch_design"
+    ],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Complete booking flow API with availability computation and appointment management.",
+    "context_files": [
+      "docs/architecture.md",
+      "docs/product.md"
+    ]
+  },
+  {
+    "task_id": "frontend_business_detail_booking",
+    "title": "Build Business Detail and Booking Flow",
+    "description": "Create Business Detail screen with image carousel, tabs (services, staff, reviews, about), and staff selection. Implement multi-step booking flow: service selection, date picker, time slots grid, identification/registration, success confirmation. Use React Native Reanimated for animations. Integrate with booking API.",
+    "assigned_agent_role": "frontend_developer",
+    "depends_on": [
+      "frontend_explore_search_map",
+      "backend_booking_availability_api",
+      "arch_design"
+    ],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Working business detail view and complete booking flow.",
+    "context_files": [
+      "docs/product.md"
+    ]
+  },
+  {
+    "task_id": "backend_favorites_profile_api",
+    "title": "Build Favorites and User Profile API",
+    "description": "Implement favorites endpoints: POST /favorites, DELETE /favorites/:businessId, GET /favorites. Implement user profile endpoint: GET /profile, PATCH /profile. Add service categories endpoint: GET /service-categories.",
+    "assigned_agent_role": "backend_developer",
+    "depends_on": [
+      "backend_setup_nestjs_prisma",
+      "arch_design"
+    ],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Working favorites, profile, and service categories API endpoints.",
+    "context_files": [
+      "docs/architecture.md",
+      "docs/product.md"
+    ]
+  },
+  {
+    "task_id": "devops_setup_docker_ci",
+    "title": "Setup Docker Compose and CI Pipeline",
+    "description": "Create Docker Compose configuration for local development: PostgreSQL with PostGIS, Redis, and the NestJS API. Setup GitHub Actions CI workflow for linting, type checking, and running tests on PRs. Configure EAS Build for mobile app. Add Supabase configuration for auth if needed.",
+    "assigned_agent_role": "devops_engineer",
+    "depends_on": [
+      "arch_setup_nx_monorepo",
+      "arch_design"
+    ],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Working docker-compose.yml, GitHub Actions workflow, and EAS Build config.",
+    "context_files": [
+      "docs/architecture.md"
+    ]
+  },
+  {
+    "task_id": "frontend_auth_screens",
+    "title": "Build Mobile Auth Screens",
+    "description": "Create Expo Router screens for authentication: Login, Register, Email Verification. Implement JWT token storage (SecureStore), auth context, and protected route logic. Use TanStack React Query for API calls. Style with Apple-style UI from design system.",
+    "assigned_agent_role": "frontend_developer",
+    "depends_on": [
+      "backend_setup_nestjs_prisma",
+      "shared_create_types_design_system",
+      "arch_design"
+    ],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Working auth screens with login, register, and token management.",
+    "context_files": [
+      "docs/product.md"
+    ]
+  },
+  {
+    "task_id": "frontend_appointments_favorites_profile",
+    "title": "Build Appointments, Favorites, and Profile Screens",
+    "description": "Create Appointments screen listing upcoming bookings with detail view and cancel action. Implement Favorites screen with saved businesses list using FavoritesContext. Build Profile screen with account info and bottom navigation entry. Integrate with respective APIs.",
+    "assigned_agent_role": "frontend_developer",
+    "depends_on": [
+      "frontend_business_detail_booking",
+      "backend_favorites_profile_api",
+      "arch_design"
+    ],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Working appointments, favorites, and profile screens.",
+    "context_files": [
+      "docs/product.md"
+    ]
+  },
+  {
+    "task_id": "review_code",
+    "title": "Code Review",
+    "description": "Review all code produced for bugs, security issues, and maintainability.",
+    "assigned_agent_role": "code_reviewer",
+    "depends_on": [
+      "frontend_business_detail_booking",
+      "backend_business_search_api",
+      "backend_favorites_profile_api",
+      "backend_setup_nestjs_prisma",
+      "devops_setup_docker_ci",
+      "frontend_auth_screens",
+      "backend_booking_availability_api",
+      "frontend_explore_search_map",
+      "frontend_appointments_favorites_profile",
+      "shared_create_types_design_system"
+    ],
+    "output_format": "report",
+    "output_path": "output/reports/code_review.md",
+    "expected_output": "Detailed code review report with findings and recommendations",
+    "context_files": [
+      "docs/product.md",
+      "docs/architecture.md"
+    ]
+  },
+  {
+    "task_id": "track_progress",
+    "title": "Progress Report",
+    "description": "Compare codebase against product spec and report completion status.",
+    "assigned_agent_role": "progress_tracker",
+    "depends_on": [
+      "review_code"
+    ],
+    "output_format": "report",
+    "output_path": "output/reports/progress_report.md",
+    "expected_output": "Progress report with completion percentage and next priorities",
+    "context_files": [
+      "docs/product.md"
+    ]
+  },
+  {
+    "task_id": "tester_write_integration_tests",
+    "title": "Write Integration Tests for Backend APIs",
+    "description": "Write Jest integration tests for all backend API endpoints: auth (register, login, refresh, logout), business search, business detail, map search, availability, appointments CRUD, favorites, profile. Test error cases, auth guards, and pagination. Use test database with seed data.",
+    "assigned_agent_role": "tester",
+    "depends_on": [
+      "backend_business_search_api",
+      "backend_booking_availability_api",
+      "backend_favorites_profile_api"
+    ],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Suite of passing integration tests for all backend APIs.",
+    "context_files": [
+      "docs/architecture.md"
+    ]
+  },
+  {
+    "task_id": "tester_write_mobile_tests",
+    "title": "Write Mobile Component and E2E Tests",
+    "description": "Write Jest unit tests for shared types and UI components. Set up React Native Testing Library for component tests (auth screens, booking flow, business card). Write basic E2E tests using Detox or Maestro for critical flows: guest browse, search, book appointment, manage favorites.",
+    "assigned_agent_role": "tester",
+    "depends_on": [
+      "frontend_auth_screens",
+      "frontend_explore_search_map",
+      "frontend_business_detail_booking",
+      "frontend_appointments_favorites_profile"
+    ],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Passing unit, component, and E2E tests for mobile app.",
+    "context_files": [
+      "docs/product.md"
+    ]
+  },
+  {
+    "task_id": "code_reviewer_review_all_code",
+    "title": "Review All Code for Quality and Consistency",
+    "description": "Perform comprehensive code review across all apps and packages. Check for: adherence to architecture, TypeScript strictness, error handling, security (JWT, input validation), performance (Redis caching, query optimization), code style consistency, and test coverage. Provide feedback as PR reviews.",
+    "assigned_agent_role": "code_reviewer",
+    "depends_on": [
+      "tester_write_integration_tests",
+      "tester_write_mobile_tests"
+    ],
+    "output_format": "report",
+    "output_path": null,
+    "expected_output": "All PRs reviewed with actionable feedback; code quality standards met.",
+    "context_files": [
+      "docs/architecture.md",
+      "docs/product.md"
+    ]
+  },
+  {
+    "task_id": "progress_tracker_final_report",
+    "title": "Generate Final Progress Report",
+    "description": "Review all completed tasks against product requirements. Generate a progress report (docs/progress_report.md) listing: completed features, pending items (payments, notifications, provider portal, admin dashboard, background jobs), known issues, and recommendations for next sprint.",
+    "assigned_agent_role": "progress_tracker",
+    "depends_on": [
+      "code_reviewer_review_all_code"
+    ],
+    "output_format": "markdown",
+    "output_path": "docs/progress_report.md",
+    "expected_output": "Final progress report with completion status and recommendations.",
+    "context_files": [
+      "docs/product.md",
+      "docs/architecture.md"
+    ]
+  }
+]
