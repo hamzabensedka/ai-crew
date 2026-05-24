@@ -1,0 +1,31 @@
+# {{ project_name }} — Product Specification
+
+## Overview
+{{ description }}
+
+## Domain
+{{ domain }}
+
+## Tech Stack
+- **Frontend:** {{ frontend | join(', ') if frontend else 'N/A' }}
+- **Backend:** {{ backend | join(', ') if backend else 'N/A' }}
+- **DevOps:** {{ devops | join(', ') if devops else 'N/A' }}
+
+## Special Requirements
+{% for req in special_requirements %}
+- {{ req }}
+{% endfor %}
+
+## Features
+{% for feature in features %}
+### {{ feature.name }} ({{ feature.priority }} priority)
+**Status:** {{ feature.status }}
+
+{{ feature.description }}
+
+{% endfor %}
+
+## Missing Parts
+{% for part in missing_parts %}
+- {{ part }}
+{% endfor %}

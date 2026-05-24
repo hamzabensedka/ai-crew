@@ -1,0 +1,25 @@
+{
+  "project_type": "new_idea",
+  "project_name": "My App",
+  "domain": "saas",
+  "description": "One-paragraph summary of the project",
+  "tech_stack": {
+    "frontend": ["Next.js", "Tailwind"],
+    "backend": ["FastAPI", "PostgreSQL"],
+    "devops": ["Docker"],
+    "other": []
+  },
+  "features": [
+    {
+      "name": "User Authentication",
+      "description": "Email/password login with JWT",
+      "status": "not_started",
+      "priority": "high"
+    }
+  ],
+  "existing_files": [],
+  "missing_parts": [],
+  "special_requirements": ["auth"],
+  "raw_idea": "Optional: original user idea text",
+  "codebase_path": null
+}

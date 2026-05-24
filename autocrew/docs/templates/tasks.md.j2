@@ -1,0 +1,25 @@
+# {{ project_name }} — Task Plan
+
+Generated: {{ created_at }}
+
+## Execution Order
+{% for role in execution_order %}
+- {{ role }}
+{% endfor %}
+
+## Parallel Groups
+{% for group in parallel_groups %}
+- {{ group | join(' + ') }}
+{% endfor %}
+
+## Tasks
+{% for task in tasks %}
+### {{ task.title }} (`{{ task.task_id }}`)
+- **Agent:** {{ task.assigned_agent_role }}
+- **Depends on:** {{ task.depends_on | join(', ') if task.depends_on else 'none' }}
+- **Output:** {{ task.output_path or task.output_format }}
+- **Expected:** {{ task.expected_output }}
+
+{{ task.description }}
+
+{% endfor %}
