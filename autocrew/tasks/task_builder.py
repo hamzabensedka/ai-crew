@@ -135,6 +135,17 @@ def _merge_tasks(llm_tasks: list[TaskConfig], standard: list[TaskConfig]) -> lis
     return merged
 
 
+def merge_foundation_tasks(
+    squad: Squad,
+    context: ProjectContext,
+    extra_tasks: list[TaskConfig],
+) -> list[TaskConfig]:
+    """Merge debate/extra tasks with standard foundation tasks (po, arch, review, track)."""
+    foundation = build_tasks(squad, context, llm_call=lambda _: "[]")
+    merged = _merge_tasks(extra_tasks, foundation)
+    return resolve_dependencies(merged)
+
+
 def build_tasks(
     squad: Squad,
     context: ProjectContext,

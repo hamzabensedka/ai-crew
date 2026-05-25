@@ -16,7 +16,7 @@ from autocrew.debate.model_router import DualModelRouter
 from autocrew.security_audit import run_llm_security_review, run_security_audit
 from autocrew.squad.squad_model import Squad
 from autocrew.storage import save_tasks
-from autocrew.tasks.dependency_resolver import resolve_dependencies
+from autocrew.tasks.task_builder import merge_foundation_tasks
 from autocrew.tasks.task_model import TaskConfig
 from autocrew.tracker.progress_tracker import generate_progress_report
 
@@ -211,7 +211,7 @@ def run_autopilot(
 
         blockers = debate.rounds[-1].total_blockers if debate.rounds else 999
         debate_tasks = build_tasks_from_debate(debate, squad, context)
-        tasks: list[TaskConfig] = resolve_dependencies(debate_tasks)
+        tasks: list[TaskConfig] = merge_foundation_tasks(squad, context, debate_tasks)
         save_tasks(tasks, output_dir, context.project_name)
 
         tasks_built = 0

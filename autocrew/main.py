@@ -41,7 +41,7 @@ from autocrew.storage import (
     save_tasks,
 )
 from autocrew.tasks.dependency_resolver import resolve_dependencies
-from autocrew.tasks.task_builder import build_tasks
+from autocrew.tasks.task_builder import build_tasks, merge_foundation_tasks
 from autocrew.tracker.progress_tracker import generate_progress_report, render_report_markdown, save_report
 from autocrew.tracker.report_model import ProgressReport
 
@@ -380,9 +380,8 @@ def debate(
     )
     console.print(consensus_msg)
 
-    base_tasks = _build_tasks_no_llm(squad, context)
     debate_tasks = build_tasks_from_debate(result, squad, context)
-    all_tasks = resolve_dependencies(_merge_task_lists(base_tasks, debate_tasks))
+    all_tasks = merge_foundation_tasks(squad, context, debate_tasks)
     tasks_path = save_tasks(all_tasks, settings.output_dir, context.project_name)
 
     console.print(f"[green]Final plan:[/green] {result.final_plan_path}")

@@ -8,7 +8,7 @@ from autocrew.main import app
 from autocrew.squad.squad_builder import build_squad
 from autocrew.storage import save_context, save_squad
 from autocrew.tasks.dependency_resolver import DependencyError, resolve_dependencies
-from autocrew.tasks.task_builder import build_tasks
+from autocrew.tasks.task_builder import build_tasks, merge_foundation_tasks
 from autocrew.tasks.task_model import TaskConfig
 
 runner = CliRunner()
@@ -55,6 +55,24 @@ class TestTaskBuilder:
         assert "arch_design" in task_ids
         assert "review_code" in task_ids
         assert "track_progress" in task_ids
+
+    def test_merge_foundation_tasks_resolves_arch_design(self):
+        context = _sample_context()
+        squad = build_squad(context)
+        debate_tasks = [
+            TaskConfig(
+                task_id="debate_1_fix_auth",
+                title="Fix auth",
+                description="Implement auth",
+                assigned_agent_role="fullstack_dev",
+                depends_on=["arch_design"],
+            )
+        ]
+        tasks = merge_foundation_tasks(squad, context, debate_tasks)
+        task_ids = [t.task_id for t in tasks]
+        assert "arch_design" in task_ids
+        assert "debate_1_fix_auth" in task_ids
+        assert task_ids.index("arch_design") < task_ids.index("debate_1_fix_auth")
 
 
 class TestCLI:
@@ -146,7 +164,10 @@ class TestCLI:
         monkeypatch.setattr("autocrew.config.settings.require_confirmation", False)
 
         project_root = tmp_path / "build-target"
-        result = runner.invoke(app, ["build", "--root", str(project_root), "--yes"])
+        result = runner.invoke(
+            app,
+            ["build", "--root", str(project_root), "--yes", "--simulation", "--no-parallel-git"],
+        )
         assert result.exit_code == 0
         assert "Build Complete" in result.stdout or "complete" in result.stdout.lower()
 
