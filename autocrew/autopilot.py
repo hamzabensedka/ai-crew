@@ -218,42 +218,46 @@ def run_autopilot(
         if debate_tasks and not debate.consensus_reached:
             if on_phase:
                 on_phase(f"build ({min(build_limit, len(tasks))} tasks)")
-            if use_llm_build and (dual_router is not None or llm is not None):
-                if dual_router is not None:
-                    run_crew(
-                        squad,
-                        tasks,
-                        context,
-                        project_root=root,
-                        use_llm=True,
-                        dual_router=dual_router,
-                        task_limit=build_limit,
-                        parallel_git=parallel_git,
-                        git_push=git_push,
-                    )
+            try:
+                if use_llm_build and (dual_router is not None or llm is not None):
+                    if dual_router is not None:
+                        run_crew(
+                            squad,
+                            tasks,
+                            context,
+                            project_root=root,
+                            use_llm=True,
+                            dual_router=dual_router,
+                            task_limit=build_limit,
+                            parallel_git=parallel_git,
+                            git_push=git_push,
+                        )
+                    else:
+                        run_crew(
+                            squad,
+                            tasks,
+                            context,
+                            project_root=root,
+                            use_llm=True,
+                            llm_call=llm.complete,
+                            task_limit=build_limit,
+                            parallel_git=parallel_git,
+                            git_push=git_push,
+                        )
                 else:
                     run_crew(
                         squad,
                         tasks,
                         context,
                         project_root=root,
-                        use_llm=True,
-                        llm_call=llm.complete,
                         task_limit=build_limit,
                         parallel_git=parallel_git,
                         git_push=git_push,
                     )
-            else:
-                run_crew(
-                    squad,
-                    tasks,
-                    context,
-                    project_root=root,
-                    task_limit=build_limit,
-                    parallel_git=parallel_git,
-                    git_push=git_push,
-                )
-            tasks_built = min(build_limit, len(tasks))
+                tasks_built = min(build_limit, len(tasks))
+            except Exception as exc:
+                if on_phase:
+                    on_phase(f"build had errors (continuing): {exc}")
 
         report = generate_progress_report(context, root)
 

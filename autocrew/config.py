@@ -27,8 +27,12 @@ class Settings(BaseSettings):
     logs_dir: str = "./output/logs"
     contexts_dir: str = "./output/contexts"
 
-    max_retries_per_task: int = 2
+    llm_max_retries: int = 6
+    llm_retry_backoff_seconds: float = 10.0
+    llm_request_timeout_seconds: int = 600
+    max_retries_per_task: int = 5
     task_timeout_seconds: int = 300
+    continue_on_task_failure: bool = True
     parallel_execution: bool = True
     parallel_git: bool = True
     git_push: bool = False

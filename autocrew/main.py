@@ -62,6 +62,9 @@ def _get_llm():
         nvidia_base_url=settings.nvidia_base_url,
         nvidia_enable_thinking=settings.nvidia_enable_thinking,
         nvidia_max_tokens=settings.nvidia_max_tokens,
+        llm_max_retries=settings.llm_max_retries,
+        llm_retry_backoff_seconds=settings.llm_retry_backoff_seconds,
+        llm_request_timeout_seconds=settings.llm_request_timeout_seconds,
     )
 
 
@@ -74,6 +77,9 @@ def _llm_settings_kwargs() -> dict:
         "nvidia_base_url": settings.nvidia_base_url,
         "nvidia_enable_thinking": settings.nvidia_enable_thinking,
         "nvidia_max_tokens": settings.nvidia_max_tokens,
+        "llm_max_retries": settings.llm_max_retries,
+        "llm_retry_backoff_seconds": settings.llm_retry_backoff_seconds,
+        "llm_request_timeout_seconds": settings.llm_request_timeout_seconds,
     }
 
 
@@ -85,9 +91,19 @@ def _get_debate_router(dual_model: bool) -> DualModelRouter | None:
     if planning_model == implementation_model:
         return None
     kwargs = _llm_settings_kwargs()
+    planning_base = create_model_client(planning_model, **kwargs)
+    implementation_base = create_model_client(implementation_model, **kwargs)
     return DualModelRouter(
-        planning_llm=create_model_client(planning_model, **kwargs),
-        implementation_llm=create_model_client(implementation_model, **kwargs),
+        planning_llm=create_model_client(
+            planning_model,
+            **kwargs,
+            fallback=implementation_base,
+        ),
+        implementation_llm=create_model_client(
+            implementation_model,
+            **kwargs,
+            fallback=planning_base,
+        ),
         planning_model=planning_model,
         implementation_model=implementation_model,
     )

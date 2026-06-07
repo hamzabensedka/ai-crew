@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from autocrew.analyzer.llm_client import _backoff_delay, is_retryable_error
 from autocrew.analyzer.project_model import ProjectContext
 from autocrew.config import settings
 from autocrew.crew.crew_logger import CrewLogger
@@ -154,9 +156,14 @@ def _run_phase_sequential(
                 except Exception as exc:
                     if attempt >= max_retries:
                         logger.set_agent_status(agent.name, "failed", task.title)
+                        if settings.continue_on_task_failure:
+                            logger.log(f"Task skipped after retries (continuing): {exc}")
+                            break
                         logger.log(f"Task failed after retries: {exc}")
                         raise
                     logger.log(f"Retry {attempt + 1} for {task.title}: {exc}")
+                    if is_retryable_error(exc):
+                        time.sleep(_backoff_delay(attempt, settings.llm_retry_backoff_seconds))
     return results
 
 

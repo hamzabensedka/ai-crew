@@ -2,7 +2,13 @@ import json
 
 import pytest
 
-from autocrew.analyzer.llm_client import LLMError, call_with_json_retry, extract_json
+from autocrew.analyzer.llm_client import (
+    LLMError,
+    ResilientLLMClient,
+    call_with_json_retry,
+    extract_json,
+    is_retryable_error,
+)
 from autocrew.analyzer.idea_analyzer import analyze_idea
 from autocrew.analyzer.project_model import ProjectContext, ProjectDomain, ProjectType, TechStack
 
@@ -64,9 +70,31 @@ class TestAnalyzeIdea:
         assert ctx.domain == ProjectDomain.SAAS
 
 
+class TestResilience:
+    def test_is_retryable_error_detects_504(self):
+        assert is_retryable_error(LLMError("NVIDIA API error: Error code: 504"))
+
+    def test_resilient_client_retries_then_succeeds(self, monkeypatch):
+        calls = {"count": 0}
+
+        class FlakyClient:
+            def complete(self, prompt: str) -> str:
+                calls["count"] += 1
+                if calls["count"] < 3:
+                    raise LLMError("NVIDIA API error: Error code: 504")
+                return '{"ok": true}'
+
+        monkeypatch.setattr("autocrew.analyzer.llm_client.time.sleep", lambda *_: None)
+        client = ResilientLLMClient(FlakyClient(), max_retries=4, backoff_seconds=1.0)
+        assert client.complete("hi") == '{"ok": true}'
+        assert calls["count"] == 3
+
+
 class TestNvidiaClient:
     def test_create_nvidia_client(self):
         from autocrew.analyzer.llm_client import NvidiaClient, create_llm_client
+
+        from autocrew.analyzer.llm_client import ResilientLLMClient
 
         client = create_llm_client(
             nvidia_key="test-nvapi-key",
@@ -74,6 +102,7 @@ class TestNvidiaClient:
             fallback_model="moonshotai/kimi-k2.6",
             llm_provider="nvidia",
         )
+        assert isinstance(client, ResilientLLMClient)
         assert isinstance(client.primary, NvidiaClient)
 
     def test_nvidia_complete(self, monkeypatch):
