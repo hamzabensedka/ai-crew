@@ -69,7 +69,7 @@ def _execute_task(
 ) -> str:
     if use_llm:
         if dual_router is not None:
-            llm, model_name = dual_router.for_agent(agent)
+            llm, model_name = dual_router.for_build_task(agent, task)
             result = execute_task_with_llm(
                 task,
                 agent,
@@ -130,7 +130,7 @@ def _run_phase_sequential(
                 continue
             model_label = ""
             if use_llm and dual_router is not None:
-                _, model_name = dual_router.for_agent(agent)
+                _, model_name = dual_router.for_build_task(agent, task)
                 model_label = model_name.split("/")[-1]
             if on_task_start:
                 on_task_start(agent, task, model_label)

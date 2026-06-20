@@ -52,6 +52,39 @@ Rules:
 """
 
 
+DOC_TASK_PROMPT = """You are {agent_name}, role: {agent_role}.
+Goal: {goal}
+Backstory: {backstory}
+
+Project: {project_name}
+Task: {task_title}
+
+Instructions:
+{task_body}
+
+Write ONE markdown document for: {output_path}
+Keep it concise but complete (under 6000 words).
+
+Return JSON only:
+{{
+  "content": "full markdown document as one JSON string",
+  "summary": "one sentence"
+}}
+
+Rules:
+- Valid JSON only, no markdown fences around the JSON.
+- Escape newlines in the content string.
+"""
+
+
+def _is_doc_task(task: TaskConfig) -> bool:
+    return bool(
+        task.output_path
+        and task.output_path.endswith(".md")
+        and task.task_id in ("arch_design", "po_product_spec", "review_code", "track_progress")
+    )
+
+
 def _list_project_tree(project_root: str, max_entries: int = 40) -> str:
     from pathlib import Path
 
@@ -116,20 +149,32 @@ def execute_task_with_llm(
     task_body = inject_task_context(task, project_root)
     tree = _list_project_tree(project_root)
 
-    prompt = BUILD_TASK_PROMPT.format(
-        agent_name=agent.name,
-        agent_role=agent.role.value,
-        goal=agent.goal,
-        backstory=agent.backstory,
-        project_name=context.project_name,
-        task_id=task.task_id,
-        task_title=task.title,
-        task_body=task_body[:14000],
-        output_format=task.output_format,
-        output_path=task.output_path or "(choose an appropriate path under allowed scopes)",
-        write_scopes=", ".join(agent.can_write_to),
-    )
-    prompt += f"\n\nExisting project files (sample):\n{tree}\n"
+    if _is_doc_task(task):
+        prompt = DOC_TASK_PROMPT.format(
+            agent_name=agent.name,
+            agent_role=agent.role.value,
+            goal=agent.goal,
+            backstory=agent.backstory,
+            project_name=context.project_name,
+            task_title=task.title,
+            task_body=task_body[:8000],
+            output_path=task.output_path,
+        )
+    else:
+        prompt = BUILD_TASK_PROMPT.format(
+            agent_name=agent.name,
+            agent_role=agent.role.value,
+            goal=agent.goal,
+            backstory=agent.backstory,
+            project_name=context.project_name,
+            task_id=task.task_id,
+            task_title=task.title,
+            task_body=task_body[:14000],
+            output_format=task.output_format,
+            output_path=task.output_path or "(choose an appropriate path under allowed scopes)",
+            write_scopes=", ".join(agent.can_write_to),
+        )
+        prompt += f"\n\nExisting project files (sample):\n{tree}\n"
 
     model_label = model_name.split("/")[-1] if model_name else "LLM"
     logger.log(f"Calling {model_label} for task '{task.title}'")

@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from autocrew.analyzer.llm_client import LLMClient
 from autocrew.squad.squad_model import AgentConfig, AgentRole
+from autocrew.tasks.task_model import TaskConfig
+
+# Heavy doc/code generation tasks — use implementation model even for planning roles
+BUILD_IMPLEMENTATION_TASKS = frozenset({"arch_design", "po_product_spec"})
 
 # Planning / review agents — typically stronger reasoning models (e.g. Kimi)
 PLANNING_ROLES = {
@@ -46,6 +50,14 @@ class DualModelRouter:
         if agent.role in IMPLEMENTATION_ROLES:
             return self.implementation_llm, self.implementation_model
         return self.planning_llm, self.planning_model
+
+    def for_build_task(self, agent: AgentConfig, task: TaskConfig) -> tuple[LLMClient, str]:
+        """Debate stays dual-model; large file generation uses the implementation model."""
+        if task.task_id in BUILD_IMPLEMENTATION_TASKS:
+            return self.implementation_llm, self.implementation_model
+        if task.output_path and task.output_path.endswith(".md") and task.task_id == "arch_design":
+            return self.implementation_llm, self.implementation_model
+        return self.for_agent(agent)
 
     def summary(self) -> str:
         return (

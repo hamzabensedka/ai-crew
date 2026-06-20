@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import shutil
+import stat
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -41,6 +44,34 @@ def _repo(project_root: str):
     return git.Repo(str(path))
 
 
+def _git_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return env
+
+
+def _run_git(project_root: str, *args: str, check: bool = False) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+        check=check,
+    )
+
+
+def _force_remove_directory(path: Path) -> None:
+    """Remove a directory without interactive prompts (Windows-safe)."""
+
+    def _on_rm_error(func, p, _exc_info):
+        os.chmod(p, stat.S_IWRITE)
+        func(p)
+
+    if path.exists():
+        shutil.rmtree(path, onerror=_on_rm_error)
+
+
 def git_init(project_root: str) -> str:
     try:
         import git
@@ -48,20 +79,54 @@ def git_init(project_root: str) -> str:
         repo_path = Path(project_root)
         if (repo_path / ".git").exists():
             return "Git repo already initialized"
-        git.Repo.init(repo_path)
+        git.Repo.init(repo_path, initial_branch="main")
         return "Git repo initialized"
     except Exception as exc:
         return f"Git init failed: {exc}"
 
 
+def git_ensure_initial_commit(project_root: str, branch: str = "main") -> str:
+    """Ensure repo has at least one commit on a named branch."""
+    repo = _repo(project_root)
+    if repo.heads:
+        return f"Repo already has branch(es): {', '.join(h.name for h in repo.heads)}"
+
+    repo.git.checkout("-b", branch)
+    marker = Path(project_root) / ".gitkeep"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch(exist_ok=True)
+    repo.index.add([str(marker)])
+    repo.index.commit("Initial commit")
+    return f"Created initial commit on {branch}"
+
+
+def git_resolve_base_branch(project_root: str) -> str:
+    """Pick main/master or create an initial branch — never assume master exists."""
+    repo = _repo(project_root)
+    for name in ("main", "master"):
+        if name in [h.name for h in repo.heads]:
+            return name
+    if not repo.heads:
+        git_ensure_initial_commit(project_root, "main")
+        return "main"
+    if repo.head.is_detached:
+        return "main"
+    return repo.active_branch.name
+
+
 def git_default_branch(project_root: str) -> str:
     try:
-        repo = _repo(project_root)
-        if repo.head.is_detached:
-            return "main"
-        return repo.active_branch.name
+        return git_resolve_base_branch(project_root)
     except GitError:
         return "main"
+
+
+def git_has_remote(project_root: str, remote: str = "origin") -> bool:
+    try:
+        repo = _repo(project_root)
+        return remote in [r.name for r in repo.remotes]
+    except GitError:
+        return False
 
 
 def git_commit(project_root: str, message: str) -> str:
@@ -104,36 +169,40 @@ def git_create_worktree(
     base_branch: str,
 ) -> str:
     """Create an isolated worktree on a new branch from base."""
-    repo = _repo(project_root)
+    root = str(Path(project_root).resolve())
+    git_ensure_initial_commit(root, base_branch if base_branch in ("main", "master") else "main")
+    base_branch = git_resolve_base_branch(root)
     wt = Path(worktree_path).resolve()
     wt.parent.mkdir(parents=True, exist_ok=True)
     if wt.exists():
-        return f"Worktree already exists: {wt}"
-    repo.git.worktree("add", "-B", branch, str(wt), base_branch)
+        git_remove_worktree(root, str(wt))
+    proc = _run_git(root, "worktree", "add", "-B", branch, str(wt), base_branch)
+    if proc.returncode != 0:
+        raise GitError(proc.stderr.strip() or proc.stdout.strip() or "worktree add failed")
     return f"Worktree {wt} on branch {branch}"
 
 
 def git_remove_worktree(project_root: str, worktree_path: str) -> str:
-    repo = _repo(project_root)
-    wt = str(Path(worktree_path).resolve())
-    try:
-        repo.git.worktree("remove", wt, force=True)
-    except Exception:
-        subprocess.run(
-            ["git", "worktree", "remove", "--force", wt],
-            cwd=project_root,
-            check=False,
-        )
-    return f"Removed worktree {wt}"
+    """Remove worktree without interactive prompts (safe for unattended runs)."""
+    root = str(Path(project_root).resolve())
+    wt = Path(worktree_path).resolve()
+    wt_str = str(wt)
+
+    _run_git(root, "worktree", "remove", "--force", wt_str)
+    _run_git(root, "worktree", "prune")
+    _force_remove_directory(wt)
+
+    return f"Removed worktree {wt_str}"
 
 
 def git_push_branch(project_root: str, branch: str, remote: str = "origin") -> str:
-    repo = _repo(project_root)
-    try:
-        repo.git.push(remote, branch)
-        return f"Pushed {branch} to {remote}"
-    except Exception as exc:
-        return f"Push skipped/failed for {branch}: {exc}"
+    if not git_has_remote(project_root, remote):
+        return f"Push skipped for {branch}: no '{remote}' remote configured"
+    proc = _run_git(project_root, "push", remote, branch)
+    if proc.returncode != 0:
+        err = (proc.stderr or proc.stdout or "").strip()
+        return f"Push skipped/failed for {branch}: {err}"
+    return f"Pushed {branch} to {remote}"
 
 
 def git_merge_branch(project_root: str, base_branch: str, feature_branch: str) -> MergeAttempt:

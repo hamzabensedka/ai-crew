@@ -21,11 +21,12 @@ from autocrew.tools.git_tools import (
     git_branch_diff_stat,
     git_commit,
     git_create_worktree,
-    git_default_branch,
+    git_ensure_initial_commit,
     git_init,
     git_merge_branch,
     git_push_branch,
     git_remove_worktree,
+    git_resolve_base_branch,
 )
 
 
@@ -226,7 +227,8 @@ async def run_parallel_group_with_git(
     git_init(str(root))
 
     try:
-        base_branch = git_default_branch(str(root))
+        git_ensure_initial_commit(str(root))
+        base_branch = git_resolve_base_branch(str(root))
     except GitError as exc:
         logger.log(f"Parallel git unavailable: {exc}")
         return [], None
