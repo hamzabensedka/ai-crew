@@ -9,10 +9,12 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     openai_api_key: str = ""
     nvidia_api_key: str = ""
-    llm_provider: str = "auto"  # auto | anthropic | openai | nvidia
+    zenmux_api_key: str = ""
+    llm_provider: str = "auto"  # auto | anthropic | openai | nvidia | zenmux
     default_llm: str = "deepseek-ai/deepseek-v4-flash"
     fallback_llm: str = "moonshotai/kimi-k2.6"
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
+    zenmux_base_url: str = "https://zenmux.ai/api/v1"
     nvidia_enable_thinking: bool = False
     nvidia_max_tokens: int = 16384
 
@@ -45,6 +47,7 @@ class Settings(BaseSettings):
             self.anthropic_api_key.strip()
             or self.openai_api_key.strip()
             or self.nvidia_api_key.strip()
+            or self.zenmux_api_key.strip()
         )
 
     def ensure_dirs(self) -> None:

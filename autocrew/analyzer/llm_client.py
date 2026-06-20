@@ -1,4 +1,4 @@
-"""LLM client abstraction — Anthropic, OpenAI, and NVIDIA NIM."""
+"""LLM client abstraction — Anthropic, OpenAI, NVIDIA NIM, and ZenMux."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import time
 from typing import Callable, Protocol
 
 NVIDIA_DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1"
+ZENMUX_DEFAULT_BASE_URL = "https://zenmux.ai/api/v1"
 _RETRYABLE_MARKERS = (
     "504",
     "503",
@@ -268,6 +269,30 @@ class NvidiaClient(OpenAICompatibleClient):
         )
 
 
+class ZenMuxClient(OpenAICompatibleClient):
+    """ZenMux — OpenAI-compatible gateway (https://zenmux.ai/api/v1)."""
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        *,
+        base_url: str = ZENMUX_DEFAULT_BASE_URL,
+        max_tokens: int = 16384,
+        temperature: float = 0.2,
+        timeout_seconds: int = 600,
+    ) -> None:
+        super().__init__(
+            api_key,
+            model,
+            base_url=base_url,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            provider_label="ZenMux",
+            timeout_seconds=timeout_seconds,
+        )
+
+
 class FallbackLLMClient:
     """Try primary LLM, fall back to secondary on failure."""
 
@@ -309,10 +334,12 @@ def create_llm_client(
     anthropic_key: str = "",
     openai_key: str = "",
     nvidia_key: str = "",
+    zenmux_key: str = "",
     default_model: str = "claude-3-5-sonnet-20241022",
     fallback_model: str = "gpt-4o",
     llm_provider: str = "auto",
     nvidia_base_url: str = NVIDIA_DEFAULT_BASE_URL,
+    zenmux_base_url: str = ZENMUX_DEFAULT_BASE_URL,
     nvidia_enable_thinking: bool = False,
     nvidia_max_tokens: int = 16384,
     llm_max_retries: int = 6,
@@ -344,6 +371,17 @@ def create_llm_client(
             timeout_seconds=timeout,
         )
 
+    def _zenmux(model: str) -> ZenMuxClient | None:
+        if not zenmux_key.strip():
+            return None
+        return ZenMuxClient(
+            zenmux_key,
+            model,
+            base_url=zenmux_base_url,
+            max_tokens=nvidia_max_tokens,
+            timeout_seconds=timeout,
+        )
+
     def _resilient_pair(primary: LLMClient | None, fallback: LLMClient | None, label: str) -> LLMClient | None:
         if primary is None:
             return None
@@ -354,6 +392,18 @@ def create_llm_client(
             max_retries=llm_max_retries,
             backoff_seconds=llm_retry_backoff_seconds,
         )
+
+    if provider == "zenmux":
+        primary = _zenmux(default_model)
+        if primary is None:
+            raise LLMError("LLM_PROVIDER=zenmux but ZENMUX_API_KEY is not set")
+        fallback = (
+            _zenmux(fallback_model)
+            or _nvidia(fallback_model)
+            or _openai(fallback_model)
+            or _anthropic(fallback_model)
+        )
+        return _resilient_pair(primary, fallback, default_model) or primary
 
     if provider == "nvidia":
         primary = _nvidia(default_model)
@@ -393,7 +443,7 @@ def create_llm_client(
         fallback = _anthropic(fallback_model) or _nvidia(fallback_model)
 
     if primary is None:
-        raise LLMError("No LLM API key configured (Anthropic, OpenAI, or NVIDIA)")
+        raise LLMError("No LLM API key configured (Anthropic, OpenAI, NVIDIA, or ZenMux)")
     return _resilient_pair(primary, fallback, default_model) or primary
 
 
@@ -403,8 +453,10 @@ def create_model_client(
     anthropic_key: str = "",
     openai_key: str = "",
     nvidia_key: str = "",
+    zenmux_key: str = "",
     llm_provider: str = "auto",
     nvidia_base_url: str = NVIDIA_DEFAULT_BASE_URL,
+    zenmux_base_url: str = ZENMUX_DEFAULT_BASE_URL,
     nvidia_enable_thinking: bool = False,
     nvidia_max_tokens: int = 16384,
     llm_max_retries: int = 6,
@@ -416,7 +468,17 @@ def create_model_client(
     provider = llm_provider.strip().lower()
     timeout = llm_request_timeout_seconds
 
-    if provider == "nvidia" or (provider == "auto" and nvidia_key.strip()):
+    if provider == "zenmux":
+        if not zenmux_key.strip():
+            raise LLMError("ZenMux API key required when LLM_PROVIDER=zenmux")
+        client: LLMClient = ZenMuxClient(
+            zenmux_key,
+            model,
+            base_url=zenmux_base_url,
+            max_tokens=nvidia_max_tokens,
+            timeout_seconds=timeout,
+        )
+    elif provider == "nvidia" or (provider == "auto" and nvidia_key.strip()):
         if not nvidia_key.strip():
             raise LLMError("NVIDIA API key required for NVIDIA models")
         client: LLMClient = NvidiaClient(

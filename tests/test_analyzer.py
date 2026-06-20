@@ -144,3 +144,57 @@ class TestNvidiaClient:
 
         s = Settings(nvidia_api_key="nvapi-test")
         assert s.has_api_keys()
+
+
+class TestZenMuxClient:
+    def test_create_zenmux_client(self):
+        from autocrew.analyzer.llm_client import ResilientLLMClient, ZenMuxClient, create_llm_client
+
+        client = create_llm_client(
+            zenmux_key="zenmux-test-key",
+            default_model="z-ai/glm-5.2-free",
+            fallback_model="moonshotai/kimi-k2.7-code-free",
+            llm_provider="zenmux",
+        )
+        assert isinstance(client, ResilientLLMClient)
+        assert isinstance(client.primary, ZenMuxClient)
+
+    def test_zenmux_complete(self, monkeypatch):
+        from autocrew.analyzer.llm_client import ZenMuxClient
+
+        class FakeMessage:
+            content = '{"ok": true}'
+            reasoning_content = None
+
+        class FakeChoice:
+            message = FakeMessage()
+
+        class FakeResponse:
+            choices = [FakeChoice()]
+
+        class FakeCompletions:
+            def create(self, **kwargs):
+                assert kwargs["model"] == "z-ai/glm-5.2-free"
+                assert kwargs["stream"] is False
+                return FakeResponse()
+
+        class FakeChat:
+            completions = FakeCompletions()
+
+        class FakeOpenAI:
+            def __init__(self, **kwargs):
+                assert kwargs["api_key"] == "zenmux-test"
+                assert kwargs["base_url"] == "https://zenmux.ai/api/v1"
+                self.chat = FakeChat()
+
+        monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
+
+        client = ZenMuxClient("zenmux-test", "z-ai/glm-5.2-free")
+        result = client.complete("Return JSON")
+        assert result == '{"ok": true}'
+
+    def test_has_api_keys_includes_zenmux(self):
+        from autocrew.config import Settings
+
+        s = Settings(zenmux_api_key="zenmux-test")
+        assert s.has_api_keys()
