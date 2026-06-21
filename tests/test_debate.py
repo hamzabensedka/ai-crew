@@ -119,6 +119,8 @@ class TestDebateCLI:
         monkeypatch.setattr(settings, "output_dir", str(isolated_output_dirs))
         monkeypatch.setattr(settings, "anthropic_api_key", "")
         monkeypatch.setattr(settings, "openai_api_key", "")
+        monkeypatch.setattr(settings, "nvidia_api_key", "")
+        monkeypatch.setattr(settings, "zenmux_api_key", "")
         monkeypatch.setattr(settings, "require_confirmation", False)
 
         result = runner.invoke(

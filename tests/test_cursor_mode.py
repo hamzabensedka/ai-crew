@@ -79,6 +79,8 @@ class TestNoApiKeys:
     def test_new_without_keys_shows_cursor_hint(self, monkeypatch):
         monkeypatch.setattr(settings, "anthropic_api_key", "")
         monkeypatch.setattr(settings, "openai_api_key", "")
+        monkeypatch.setattr(settings, "nvidia_api_key", "")
+        monkeypatch.setattr(settings, "zenmux_api_key", "")
         result = runner.invoke(app, ["new", "Build a CRM"])
         assert result.exit_code == 1
         assert "Cursor" in result.stdout or "cursor-workflow" in result.stdout
@@ -103,6 +105,8 @@ class TestNoApiKeys:
 
         monkeypatch.setattr(settings, "anthropic_api_key", "")
         monkeypatch.setattr(settings, "openai_api_key", "")
+        monkeypatch.setattr(settings, "nvidia_api_key", "")
+        monkeypatch.setattr(settings, "zenmux_api_key", "")
         monkeypatch.setattr(settings, "contexts_dir", str(ctx_dir))
         monkeypatch.setattr(settings, "squads_dir", str(sq_dir))
         monkeypatch.setattr(settings, "output_dir", str(isolated_output_dirs))

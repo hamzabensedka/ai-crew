@@ -251,9 +251,11 @@ class NvidiaClient(OpenAICompatibleClient):
         *,
         base_url: str = NVIDIA_DEFAULT_BASE_URL,
         max_tokens: int = 16384,
-        temperature: float = 0.2,
+        temperature: float = 1.0,
+        top_p: float = 0.95,
         enable_thinking: bool = False,
         reasoning_effort: str = "high",
+        reasoning_budget: int = 16384,
         timeout_seconds: int = 600,
     ) -> None:
         super().__init__(
@@ -267,6 +269,90 @@ class NvidiaClient(OpenAICompatibleClient):
             provider_label="NVIDIA",
             timeout_seconds=timeout_seconds,
         )
+        self.top_p = top_p
+        self.reasoning_budget = reasoning_budget
+
+    def _build_request_kwargs(self, prompt: str) -> dict:
+        kwargs: dict = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": self.temperature,
+            "top_p": self.top_p,
+            "max_tokens": self.max_tokens,
+        }
+        model_lower = self.model.lower()
+        if "nemotron" in model_lower:
+            kwargs["stream"] = True
+            kwargs["extra_body"] = {
+                "chat_template_kwargs": {"enable_thinking": True},
+                "reasoning_budget": self.reasoning_budget,
+            }
+        elif "deepseek" in model_lower:
+            kwargs["stream"] = False
+            kwargs["extra_body"] = {"chat_template_kwargs": {"thinking": False}}
+        elif self.enable_thinking:
+            kwargs["stream"] = False
+            kwargs["extra_body"] = {
+                "chat_template_kwargs": {
+                    "thinking": True,
+                    "reasoning_effort": self.reasoning_effort,
+                }
+            }
+        else:
+            kwargs["stream"] = False
+        return kwargs
+
+    def _complete_stream(self, client, request_kwargs: dict) -> str:
+        stream = client.chat.completions.create(**request_kwargs)
+        content_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            reasoning = getattr(delta, "reasoning_content", None)
+            if reasoning:
+                reasoning_parts.append(reasoning)
+            if delta.content is not None:
+                content_parts.append(delta.content)
+        content = "".join(content_parts).strip()
+        if content:
+            return content
+        reasoning = "".join(reasoning_parts).strip()
+        if reasoning:
+            return reasoning
+        raise LLMError("NVIDIA returned empty response")
+
+    def complete(self, prompt: str) -> str:
+        if not self.api_key:
+            raise LLMError("NVIDIA API key not configured")
+        try:
+            from openai import OpenAI
+
+            client_kwargs: dict = {
+                "api_key": self.api_key,
+                "timeout": self.timeout_seconds,
+            }
+            if self.base_url:
+                client_kwargs["base_url"] = self.base_url
+            client = OpenAI(**client_kwargs)
+
+            request_kwargs = self._build_request_kwargs(prompt)
+            if request_kwargs.get("stream"):
+                return self._complete_stream(client, request_kwargs)
+
+            response = client.chat.completions.create(**request_kwargs)
+            message = response.choices[0].message
+            content = message.content or ""
+            if not content and hasattr(message, "reasoning_content") and message.reasoning_content:
+                content = message.reasoning_content
+            if not content or not content.strip():
+                raise LLMError("NVIDIA returned empty response")
+            return content
+        except LLMError:
+            raise
+        except Exception as exc:
+            raise LLMError(f"NVIDIA API error: {exc}") from exc
 
 
 class ZenMuxClient(OpenAICompatibleClient):
@@ -330,6 +416,31 @@ def _is_nvidia_model(model: str) -> bool:
     return "/" in model or model.startswith(("deepseek", "moonshotai", "meta", "nvidia"))
 
 
+def _make_nvidia_client(
+    nvidia_key: str,
+    model: str,
+    *,
+    nvidia_base_url: str,
+    nvidia_max_tokens: int,
+    nvidia_enable_thinking: bool,
+    nvidia_temperature: float,
+    nvidia_top_p: float,
+    nvidia_reasoning_budget: int,
+    timeout_seconds: int,
+) -> NvidiaClient:
+    return NvidiaClient(
+        nvidia_key,
+        model,
+        base_url=nvidia_base_url,
+        max_tokens=nvidia_max_tokens,
+        temperature=nvidia_temperature,
+        top_p=nvidia_top_p,
+        enable_thinking=nvidia_enable_thinking,
+        reasoning_budget=nvidia_reasoning_budget,
+        timeout_seconds=timeout_seconds,
+    )
+
+
 def create_llm_client(
     anthropic_key: str = "",
     openai_key: str = "",
@@ -342,6 +453,9 @@ def create_llm_client(
     zenmux_base_url: str = ZENMUX_DEFAULT_BASE_URL,
     nvidia_enable_thinking: bool = False,
     nvidia_max_tokens: int = 16384,
+    nvidia_temperature: float = 1.0,
+    nvidia_top_p: float = 0.95,
+    nvidia_reasoning_budget: int = 16384,
     llm_max_retries: int = 6,
     llm_retry_backoff_seconds: float = 10.0,
     llm_request_timeout_seconds: int = 600,
@@ -362,12 +476,15 @@ def create_llm_client(
     def _nvidia(model: str) -> NvidiaClient | None:
         if not nvidia_key.strip():
             return None
-        return NvidiaClient(
+        return _make_nvidia_client(
             nvidia_key,
             model,
-            base_url=nvidia_base_url,
-            max_tokens=nvidia_max_tokens,
-            enable_thinking=nvidia_enable_thinking,
+            nvidia_base_url=nvidia_base_url,
+            nvidia_max_tokens=nvidia_max_tokens,
+            nvidia_enable_thinking=nvidia_enable_thinking,
+            nvidia_temperature=nvidia_temperature,
+            nvidia_top_p=nvidia_top_p,
+            nvidia_reasoning_budget=nvidia_reasoning_budget,
             timeout_seconds=timeout,
         )
 
@@ -459,6 +576,9 @@ def create_model_client(
     zenmux_base_url: str = ZENMUX_DEFAULT_BASE_URL,
     nvidia_enable_thinking: bool = False,
     nvidia_max_tokens: int = 16384,
+    nvidia_temperature: float = 1.0,
+    nvidia_top_p: float = 0.95,
+    nvidia_reasoning_budget: int = 16384,
     llm_max_retries: int = 6,
     llm_retry_backoff_seconds: float = 10.0,
     llm_request_timeout_seconds: int = 600,
@@ -481,12 +601,15 @@ def create_model_client(
     elif provider == "nvidia" or (provider == "auto" and nvidia_key.strip()):
         if not nvidia_key.strip():
             raise LLMError("NVIDIA API key required for NVIDIA models")
-        client: LLMClient = NvidiaClient(
+        client: LLMClient = _make_nvidia_client(
             nvidia_key,
             model,
-            base_url=nvidia_base_url,
-            max_tokens=nvidia_max_tokens,
-            enable_thinking=nvidia_enable_thinking,
+            nvidia_base_url=nvidia_base_url,
+            nvidia_max_tokens=nvidia_max_tokens,
+            nvidia_enable_thinking=nvidia_enable_thinking,
+            nvidia_temperature=nvidia_temperature,
+            nvidia_top_p=nvidia_top_p,
+            nvidia_reasoning_budget=nvidia_reasoning_budget,
             timeout_seconds=timeout,
         )
     elif model.startswith("claude"):

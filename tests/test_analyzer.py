@@ -98,14 +98,91 @@ class TestNvidiaClient:
 
         client = create_llm_client(
             nvidia_key="test-nvapi-key",
-            default_model="deepseek-ai/deepseek-v4-flash",
-            fallback_model="moonshotai/kimi-k2.6",
+            default_model="deepseek-ai/deepseek-v4-pro",
+            fallback_model="nvidia/nemotron-3-ultra-550b-a55b",
             llm_provider="nvidia",
         )
         assert isinstance(client, ResilientLLMClient)
         assert isinstance(client.primary, NvidiaClient)
 
-    def test_nvidia_complete(self, monkeypatch):
+    def test_nvidia_deepseek_v4_pro_request(self, monkeypatch):
+        from autocrew.analyzer.llm_client import NvidiaClient
+
+        captured: dict = {}
+
+        class FakeMessage:
+            content = '{"ok": true}'
+            reasoning_content = None
+
+        class FakeChoice:
+            message = FakeMessage()
+
+        class FakeResponse:
+            choices = [FakeChoice()]
+
+        class FakeCompletions:
+            def create(self, **kwargs):
+                captured.update(kwargs)
+                return FakeResponse()
+
+        class FakeChat:
+            completions = FakeCompletions()
+
+        class FakeOpenAI:
+            def __init__(self, **kwargs):
+                self.chat = FakeChat()
+
+        monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
+
+        client = NvidiaClient("nvapi-test", "deepseek-ai/deepseek-v4-pro")
+        result = client.complete("Return JSON")
+        assert result == '{"ok": true}'
+        assert captured["model"] == "deepseek-ai/deepseek-v4-pro"
+        assert captured["stream"] is False
+        assert captured["temperature"] == 1.0
+        assert captured["top_p"] == 0.95
+        assert captured["extra_body"] == {"chat_template_kwargs": {"thinking": False}}
+
+    def test_nvidia_nemotron_streams_with_thinking(self, monkeypatch):
+        from autocrew.analyzer.llm_client import NvidiaClient
+
+        captured: dict = {}
+
+        class FakeDelta:
+            content = "answer"
+            reasoning_content = None
+
+        class FakeChunkChoice:
+            delta = FakeDelta()
+
+        class FakeChunk:
+            choices = [FakeChunkChoice()]
+
+        class FakeCompletions:
+            def create(self, **kwargs):
+                captured.update(kwargs)
+                return iter([FakeChunk()])
+
+        class FakeChat:
+            completions = FakeCompletions()
+
+        class FakeOpenAI:
+            def __init__(self, **kwargs):
+                self.chat = FakeChat()
+
+        monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
+
+        client = NvidiaClient("nvapi-test", "nvidia/nemotron-3-ultra-550b-a55b")
+        result = client.complete("Plan this")
+        assert result == "answer"
+        assert captured["model"] == "nvidia/nemotron-3-ultra-550b-a55b"
+        assert captured["stream"] is True
+        assert captured["extra_body"] == {
+            "chat_template_kwargs": {"enable_thinking": True},
+            "reasoning_budget": 16384,
+        }
+
+    def test_nvidia_complete_legacy(self, monkeypatch):
         from autocrew.analyzer.llm_client import NvidiaClient
 
         class FakeMessage:

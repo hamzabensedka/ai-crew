@@ -11,16 +11,19 @@ class Settings(BaseSettings):
     nvidia_api_key: str = ""
     zenmux_api_key: str = ""
     llm_provider: str = "auto"  # auto | anthropic | openai | nvidia | zenmux
-    default_llm: str = "deepseek-ai/deepseek-v4-flash"
-    fallback_llm: str = "moonshotai/kimi-k2.6"
+    default_llm: str = "deepseek-ai/deepseek-v4-pro"
+    fallback_llm: str = "nvidia/nemotron-3-ultra-550b-a55b"
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     zenmux_base_url: str = "https://zenmux.ai/api/v1"
     nvidia_enable_thinking: bool = False
     nvidia_max_tokens: int = 16384
+    nvidia_temperature: float = 1.0
+    nvidia_top_p: float = 0.95
+    nvidia_reasoning_budget: int = 16384
 
     # Dual-model debate: planning agents vs implementation agents
     debate_dual_model: bool = True
-    debate_planning_model: str = ""  # empty = use FALLBACK_LLM (Kimi)
+    debate_planning_model: str = ""  # empty = use FALLBACK_LLM (Nemotron)
     debate_implementation_model: str = ""  # empty = use DEFAULT_LLM (DeepSeek)
 
     output_dir: str = "./output"
