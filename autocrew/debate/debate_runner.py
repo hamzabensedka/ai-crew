@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -16,6 +17,7 @@ from autocrew.debate.debate_model import AgentCritique, DebateResult, DebateRoun
 from autocrew.debate.heuristic_critique import generate_heuristic_critique
 from autocrew.debate.model_router import DualModelRouter
 from autocrew.planner import render_product_doc
+from autocrew.progress_log import progress_log
 from autocrew.squad.squad_model import AgentConfig, AgentRole, Squad
 from autocrew.tasks.task_model import TaskConfig
 
@@ -54,6 +56,36 @@ _debate_console = Console()
 
 def _log_debate(msg: str) -> None:
     _debate_console.print(msg)
+
+
+def _timed_llm_call(
+    llm_call: Callable[[str], str],
+    *,
+    model_name: str,
+    agent_name: str,
+) -> Callable[[str], str]:
+    short_model = model_name.split("/")[-1]
+
+    def wrapped(prompt: str) -> str:
+        start = time.perf_counter()
+        progress_log(
+            f"  → {agent_name}: calling {short_model} "
+            f"({len(prompt):,} char prompt)...",
+        )
+        try:
+            result = llm_call(prompt)
+        except Exception as exc:
+            elapsed = time.perf_counter() - start
+            progress_log(f"  ✗ {agent_name}: failed after {elapsed:.1f}s — {exc}")
+            raise
+        elapsed = time.perf_counter() - start
+        progress_log(
+            f"  ← {agent_name}: {short_model} replied in {elapsed:.1f}s "
+            f"({len(result):,} chars)",
+        )
+        return result
+
+    return wrapped
 
 
 def _slug(name: str) -> str:
@@ -295,18 +327,40 @@ def run_debate(
                     plan_text,
                     round_num,
                     round_critiques,
-                    agent_llm.complete,
+                    _timed_llm_call(
+                        agent_llm.complete,
+                        model_name=model_name,
+                        agent_name=agent.name,
+                    ),
                     model_used=model_name,
                 )
             elif llm_call is not None:
                 _log_debate(f"  [{i}/{len(squad.agents)}] {agent.name} — waiting for API...")
                 critique = _llm_critique(
-                    agent, context, plan_text, round_num, round_critiques, llm_call
+                    agent,
+                    context,
+                    plan_text,
+                    round_num,
+                    round_critiques,
+                    _timed_llm_call(
+                        llm_call,
+                        model_name="LLM",
+                        agent_name=agent.name,
+                    ),
                 )
             elif llm is not None:
                 _log_debate(f"  [{i}/{len(squad.agents)}] {agent.name} — waiting for API...")
                 critique = _llm_critique(
-                    agent, context, plan_text, round_num, round_critiques, llm.complete
+                    agent,
+                    context,
+                    plan_text,
+                    round_num,
+                    round_critiques,
+                    _timed_llm_call(
+                        llm.complete,
+                        model_name=getattr(llm, "label", getattr(llm, "model", "LLM")),
+                        agent_name=agent.name,
+                    ),
                 )
             else:
                 critique = generate_heuristic_critique(agent, context, plan_text, round_num)

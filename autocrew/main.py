@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -25,6 +26,7 @@ from autocrew.debate.debate_runner import (
 )
 from autocrew.debate.model_router import DualModelRouter
 from autocrew.planner import write_plan_docs
+from autocrew.progress_log import ProgressLogger, set_progress_logger
 from autocrew.squad.squad_builder import build_squad
 from autocrew.squad.squad_model import Squad
 from autocrew.storage import (
@@ -91,6 +93,14 @@ def _llm_settings_kwargs() -> dict:
         "llm_retry_backoff_seconds": settings.llm_retry_backoff_seconds,
         "llm_request_timeout_seconds": settings.llm_request_timeout_seconds,
     }
+
+
+def _start_progress_logging(*, verbose: bool, prefix: str) -> str:
+    settings.ensure_dirs()
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    log_path = str(Path(settings.logs_dir) / f"{prefix}_{timestamp}.log")
+    set_progress_logger(ProgressLogger(log_path=log_path, verbose=verbose))
+    return log_path
 
 
 def _get_debate_router(dual_model: bool) -> DualModelRouter | None:
@@ -339,9 +349,12 @@ def debate(
         help="Use two LLMs: planning agents vs implementation agents",
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Extra LLM detail in logs"),
 ) -> None:
     """Run multi-agent debate: critique plan until squad consensus, then save implementation tasks."""
     settings.ensure_dirs()
+    log_path = _start_progress_logging(verbose=verbose, prefix="debate")
+    console.print(f"[dim]Progress log: {log_path}[/dim]")
     ctx_file = context_path or find_latest_context(settings.contexts_dir)
     sq_file = squad_path or find_latest_squad(settings.squads_dir)
 
@@ -410,6 +423,7 @@ def debate(
     all_tasks = merge_foundation_tasks(squad, context, debate_tasks)
     tasks_path = save_tasks(all_tasks, settings.output_dir, context.project_name)
 
+    console.print(f"[green]Progress log:[/green] {log_path}")
     console.print(f"[green]Final plan:[/green] {result.final_plan_path}")
     console.print(f"[green]Debate log:[/green] {result.debate_dir}")
     console.print(f"[green]Tasks ({len(all_tasks)}, incl. {len(debate_tasks)} from debate):[/green] {tasks_path}")
@@ -624,9 +638,12 @@ def autopilot(
         help="Push approved branches after code review",
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Extra LLM detail in logs"),
 ) -> None:
     """Run until the app is fully built, secured, tested, and the whole crew approves."""
     settings.ensure_dirs()
+    log_path = _start_progress_logging(verbose=verbose, prefix="autopilot")
+    console.print(f"[dim]Progress log: {log_path}[/dim]")
     ctx_file = context_path or find_latest_context(settings.contexts_dir)
     sq_file = squad_path or find_latest_squad(settings.squads_dir)
 
@@ -733,7 +750,8 @@ def autopilot(
         ))
 
     log_dir = Path(settings.output_dir) / "autopilot"
-    console.print(f"[dim]Logs:[/dim] {log_dir}")
+    console.print(f"[dim]Autopilot logs:[/dim] {log_dir}")
+    console.print(f"[dim]Progress log:[/dim] {log_path}")
 
 
 @app.command()

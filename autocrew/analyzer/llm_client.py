@@ -7,6 +7,8 @@ import re
 import time
 from typing import Callable, Protocol
 
+from autocrew.progress_log import progress_log
+
 NVIDIA_DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1"
 ZENMUX_DEFAULT_BASE_URL = "https://zenmux.ai/api/v1"
 _RETRYABLE_MARKERS = (
@@ -110,11 +112,16 @@ class ResilientLLMClient:
                 last_error = exc
                 if attempt < self.max_retries and is_retryable_error(exc):
                     delay = _backoff_delay(attempt, self.backoff_seconds)
+                    progress_log(
+                        f"LLM retry {attempt + 1}/{self.max_retries} for {self.label} "
+                        f"in {delay:.0f}s — {exc}",
+                    )
                     time.sleep(delay)
                     continue
                 break
 
         if self.fallback is not None:
+            progress_log(f"Trying fallback model for {self.label}")
             for attempt in range(min(3, self.max_retries) + 1):
                 try:
                     result = self.fallback.complete(prompt)
@@ -124,7 +131,11 @@ class ResilientLLMClient:
                 except LLMError as exc:
                     last_error = exc
                     if attempt < min(3, self.max_retries) and is_retryable_error(exc):
-                        time.sleep(_backoff_delay(attempt, self.backoff_seconds))
+                        delay = _backoff_delay(attempt, self.backoff_seconds)
+                        progress_log(
+                            f"Fallback retry {attempt + 1} for {self.label} in {delay:.0f}s — {exc}"
+                        )
+                        time.sleep(delay)
                         continue
                     break
 
@@ -306,7 +317,12 @@ class NvidiaClient(OpenAICompatibleClient):
         stream = client.chat.completions.create(**request_kwargs)
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
+        chunk_count = 0
+        start = time.perf_counter()
+        last_ping = start
+        progress_log(f"Streaming {self.model} (thinking enabled)...")
         for chunk in stream:
+            chunk_count += 1
             if not chunk.choices:
                 continue
             delta = chunk.choices[0].delta
@@ -315,11 +331,28 @@ class NvidiaClient(OpenAICompatibleClient):
                 reasoning_parts.append(reasoning)
             if delta.content is not None:
                 content_parts.append(delta.content)
+            now = time.perf_counter()
+            if now - last_ping >= 15:
+                content_len = sum(len(part) for part in content_parts)
+                reasoning_len = sum(len(part) for part in reasoning_parts)
+                progress_log(
+                    f"  … still streaming ({now - start:.0f}s, "
+                    f"{chunk_count} chunks, {content_len:,} content chars, "
+                    f"{reasoning_len:,} reasoning chars)"
+                )
+                last_ping = now
+        elapsed = time.perf_counter() - start
         content = "".join(content_parts).strip()
         if content:
+            progress_log(
+                f"Stream complete ({elapsed:.1f}s, {chunk_count} chunks, {len(content):,} chars)"
+            )
             return content
         reasoning = "".join(reasoning_parts).strip()
         if reasoning:
+            progress_log(
+                f"Stream complete — using reasoning ({elapsed:.1f}s, {len(reasoning):,} chars)"
+            )
             return reasoning
         raise LLMError("NVIDIA returned empty response")
 
@@ -341,13 +374,20 @@ class NvidiaClient(OpenAICompatibleClient):
             if request_kwargs.get("stream"):
                 return self._complete_stream(client, request_kwargs)
 
+            progress_log(f"Calling {self.model} (non-stream)...", verbose_only=True)
+            start = time.perf_counter()
             response = client.chat.completions.create(**request_kwargs)
+            elapsed = time.perf_counter() - start
             message = response.choices[0].message
             content = message.content or ""
             if not content and hasattr(message, "reasoning_content") and message.reasoning_content:
                 content = message.reasoning_content
             if not content or not content.strip():
                 raise LLMError("NVIDIA returned empty response")
+            progress_log(
+                f"Response from {self.model} ({elapsed:.1f}s, {len(content):,} chars)",
+                verbose_only=True,
+            )
             return content
         except LLMError:
             raise
