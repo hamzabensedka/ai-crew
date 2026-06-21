@@ -99,7 +99,7 @@ class TestNvidiaClient:
         client = create_llm_client(
             nvidia_key="test-nvapi-key",
             default_model="deepseek-ai/deepseek-v4-pro",
-            fallback_model="nvidia/nemotron-3-ultra-550b-a55b",
+            fallback_model="moonshotai/kimi-k2.6",
             llm_provider="nvidia",
         )
         assert isinstance(client, ResilientLLMClient)
@@ -179,7 +179,7 @@ class TestNvidiaClient:
         assert captured["stream"] is True
         assert captured["extra_body"] == {
             "chat_template_kwargs": {"enable_thinking": True},
-            "reasoning_budget": 16384,
+            "reasoning_budget": 4096,
         }
 
     def test_nvidia_complete_legacy(self, monkeypatch):
@@ -215,6 +215,27 @@ class TestNvidiaClient:
         client = NvidiaClient("nvapi-test", "deepseek-ai/deepseek-v4-flash")
         result = client.complete("Return JSON")
         assert result == '{"ok": true}'
+
+    def test_gateway_timeout_switches_to_fallback(self, monkeypatch):
+        from autocrew.analyzer.llm_client import LLMError, ResilientLLMClient
+
+        monkeypatch.setattr("autocrew.analyzer.llm_client.time.sleep", lambda *_: None)
+
+        class Primary:
+            def complete(self, prompt: str) -> str:
+                raise LLMError("NVIDIA API error: Error code: 504")
+
+        class Fallback:
+            def complete(self, prompt: str) -> str:
+                return "fallback ok"
+
+        client = ResilientLLMClient(
+            Primary(),
+            Fallback(),
+            max_retries=6,
+            label="nvidia/nemotron-3-ultra-550b-a55b",
+        )
+        assert client.complete("hi") == "fallback ok"
 
     def test_has_api_keys_includes_nvidia(self, monkeypatch):
         from autocrew.config import Settings

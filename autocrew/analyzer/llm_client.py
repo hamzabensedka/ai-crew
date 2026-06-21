@@ -38,6 +38,11 @@ def is_retryable_error(exc: Exception) -> bool:
     return any(marker in msg for marker in _RETRYABLE_MARKERS)
 
 
+def is_gateway_timeout_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "504" in msg or "524" in msg or "gateway timeout" in msg
+
+
 def _backoff_delay(attempt: int, base_seconds: float, cap_seconds: float = 120.0) -> float:
     return min(base_seconds * (2 ** attempt), cap_seconds)
 
@@ -110,6 +115,11 @@ class ResilientLLMClient:
                 return result
             except LLMError as exc:
                 last_error = exc
+                if is_gateway_timeout_error(exc) and self.fallback is not None:
+                    progress_log(
+                        f"Gateway timeout on {self.label} — switching to fallback model"
+                    )
+                    break
                 if attempt < self.max_retries and is_retryable_error(exc):
                     delay = _backoff_delay(attempt, self.backoff_seconds)
                     progress_log(
@@ -266,7 +276,7 @@ class NvidiaClient(OpenAICompatibleClient):
         top_p: float = 0.95,
         enable_thinking: bool = False,
         reasoning_effort: str = "high",
-        reasoning_budget: int = 16384,
+        reasoning_budget: int = 4096,
         timeout_seconds: int = 600,
     ) -> None:
         super().__init__(
@@ -294,6 +304,7 @@ class NvidiaClient(OpenAICompatibleClient):
         model_lower = self.model.lower()
         if "nemotron" in model_lower:
             kwargs["stream"] = True
+            kwargs["max_tokens"] = min(self.max_tokens, 8192)
             kwargs["extra_body"] = {
                 "chat_template_kwargs": {"enable_thinking": True},
                 "reasoning_budget": self.reasoning_budget,
@@ -495,7 +506,7 @@ def create_llm_client(
     nvidia_max_tokens: int = 16384,
     nvidia_temperature: float = 1.0,
     nvidia_top_p: float = 0.95,
-    nvidia_reasoning_budget: int = 16384,
+    nvidia_reasoning_budget: int = 4096,
     llm_max_retries: int = 6,
     llm_retry_backoff_seconds: float = 10.0,
     llm_request_timeout_seconds: int = 600,
@@ -618,7 +629,7 @@ def create_model_client(
     nvidia_max_tokens: int = 16384,
     nvidia_temperature: float = 1.0,
     nvidia_top_p: float = 0.95,
-    nvidia_reasoning_budget: int = 16384,
+    nvidia_reasoning_budget: int = 4096,
     llm_max_retries: int = 6,
     llm_retry_backoff_seconds: float = 10.0,
     llm_request_timeout_seconds: int = 600,

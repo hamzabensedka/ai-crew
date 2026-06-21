@@ -136,7 +136,7 @@ def _llm_critique(
         project_name=context.project_name,
         goal=agent.goal,
         backstory=agent.backstory,
-        plan_text=plan_text[:12000],
+        plan_text=plan_text[:8000],
         missing_parts=context.missing_parts,
         not_started=not_started,
         partial=partial,
