@@ -10,21 +10,48 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     nvidia_api_key: str = ""
     zenmux_api_key: str = ""
-    llm_provider: str = "auto"  # auto | anthropic | openai | nvidia | zenmux
+    openrouter_api_key: str = ""
+    llm_provider: str = "auto"  # auto | anthropic | openai | nvidia | zenmux | openrouter
     default_llm: str = "deepseek-ai/deepseek-v4-pro"
     fallback_llm: str = "moonshotai/kimi-k2.6"
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     zenmux_base_url: str = "https://zenmux.ai/api/v1"
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
     nvidia_enable_thinking: bool = False
     nvidia_max_tokens: int = 16384
     nvidia_temperature: float = 1.0
     nvidia_top_p: float = 0.95
     nvidia_reasoning_budget: int = 4096
 
+    # Step 5: parallel debate tiers for independent seats
+    debate_parallel_tiers: bool = True
+
+    # Step 4: early-exit when debate stops raising new concerns/questions
+    debate_early_exit: bool = True
+    debate_min_rounds: int = 1
+
+    # Step 3: structured critique schema + selective full-text context
+    debate_structured_critiques: bool = True
+    debate_context_max_chars: int = 12000
+
+    # Step 2: cost/latency/round-count instrumentation
+    metrics_enabled: bool = True
+    metrics_dir: str = "./output/metrics"
+
+    # Step 1: deterministic Progress Tracker in debate (no LLM for Avery)
+    debate_deterministic_tracker: bool = True
+
+    # Step 7: randomize order of dev-adjacent roles within their tier
+    debate_randomize_dev_order: bool = False
+
     # Dual-model debate: planning agents vs implementation agents
     debate_dual_model: bool = True
     debate_planning_model: str = ""  # empty = use FALLBACK_LLM (Kimi)
     debate_implementation_model: str = ""  # empty = use DEFAULT_LLM (DeepSeek)
+
+    # Per-agent model routing: JSON mapping role -> model name
+    # e.g. {"product_owner":"claude-3-5-sonnet-20241022","backend_developer":"deepseek-ai/deepseek-v4-pro"}
+    debate_per_agent_models: str = ""
 
     output_dir: str = "./output"
     squads_dir: str = "./output/squads"
@@ -51,6 +78,7 @@ class Settings(BaseSettings):
             or self.openai_api_key.strip()
             or self.nvidia_api_key.strip()
             or self.zenmux_api_key.strip()
+            or self.openrouter_api_key.strip()
         )
 
     def ensure_dirs(self) -> None:
@@ -60,6 +88,7 @@ class Settings(BaseSettings):
             self.reports_dir,
             self.logs_dir,
             self.contexts_dir,
+            self.metrics_dir,
         ):
             Path(path).mkdir(parents=True, exist_ok=True)
 

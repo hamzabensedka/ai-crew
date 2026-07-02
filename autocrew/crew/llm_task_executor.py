@@ -11,6 +11,8 @@ from autocrew.analyzer.project_model import ProjectContext
 from autocrew.config import settings
 from autocrew.crew.task_context import inject_task_context
 from autocrew.crew.crew_logger import CrewLogger
+from autocrew.metrics import begin_session, end_session
+from autocrew.metrics.instrumentation import instrument_llm_call
 from autocrew.squad.squad_model import AgentConfig
 from autocrew.tasks.task_model import TaskConfig
 from autocrew.tools.file_tools import read_file, write_file
@@ -179,10 +181,19 @@ def execute_task_with_llm(
     model_label = model_name.split("/")[-1] if model_name else "LLM"
     logger.log(f"Calling {model_label} for task '{task.title}'")
 
+    measured_call = instrument_llm_call(
+        llm_call,
+        phase="build",
+        agent_name=agent.name,
+        agent_role=agent.role.value,
+        model_name=model_name or "LLM",
+        task_id=task.task_id,
+    )
+
     try:
-        data = call_with_json_retry(llm_call, prompt, max_retries=1)
+        data = call_with_json_retry(measured_call, prompt, max_retries=1)
     except LLMError:
-        raw = llm_call(prompt)
+        raw = measured_call(prompt)
         data = _extract_json_object(raw)
 
     if not isinstance(data, dict):

@@ -11,6 +11,7 @@ from autocrew.progress_log import progress_log
 
 NVIDIA_DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1"
 ZENMUX_DEFAULT_BASE_URL = "https://zenmux.ai/api/v1"
+OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 _RETRYABLE_MARKERS = (
     "504",
     "503",
@@ -207,6 +208,7 @@ class OpenAICompatibleClient:
         self.reasoning_effort = reasoning_effort
         self.provider_label = provider_label
         self.timeout_seconds = timeout_seconds
+        self._last_usage: dict[str, int] | None = None
 
     def complete(self, prompt: str) -> str:
         if not self.api_key:
@@ -238,6 +240,13 @@ class OpenAICompatibleClient:
                 }
 
             response = client.chat.completions.create(**request_kwargs)
+            if getattr(response, "usage", None) is not None:
+                self._last_usage = {
+                    "input_tokens": int(response.usage.prompt_tokens or 0),
+                    "output_tokens": int(response.usage.completion_tokens or 0),
+                }
+            else:
+                self._last_usage = None
             message = response.choices[0].message
             content = message.content or ""
             if not content and hasattr(message, "reasoning_content") and message.reasoning_content:
@@ -430,6 +439,39 @@ class ZenMuxClient(OpenAICompatibleClient):
         )
 
 
+class OpenRouterClient(OpenAICompatibleClient):
+    """OpenRouter — unified gateway to hundreds of models (https://openrouter.ai/api/v1).
+
+    Supports Claude, GPT, DeepSeek, Kimi, Llama, Mistral, and more with a single API key.
+    Model names use the provider/model format, e.g.:
+      - "anthropic/claude-3.5-sonnet"
+      - "openai/gpt-4o"
+      - "deepseek/deepseek-chat"
+      - "moonshotai/kimi-k2"
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        *,
+        base_url: str = OPENROUTER_DEFAULT_BASE_URL,
+        max_tokens: int = 16384,
+        temperature: float = 0.2,
+        timeout_seconds: int = 600,
+    ) -> None:
+        super().__init__(
+            api_key,
+            model,
+            base_url=base_url,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            provider_label="OpenRouter",
+            timeout_seconds=timeout_seconds,
+        )
+
+
+
 class FallbackLLMClient:
     """Try primary LLM, fall back to secondary on failure."""
 
@@ -497,6 +539,8 @@ def create_llm_client(
     openai_key: str = "",
     nvidia_key: str = "",
     zenmux_key: str = "",
+    openrouter_key: str = "",
+    openrouter_base_url: str = OPENROUTER_DEFAULT_BASE_URL,
     default_model: str = "claude-3-5-sonnet-20241022",
     fallback_model: str = "gpt-4o",
     llm_provider: str = "auto",
@@ -536,6 +580,17 @@ def create_llm_client(
             nvidia_temperature=nvidia_temperature,
             nvidia_top_p=nvidia_top_p,
             nvidia_reasoning_budget=nvidia_reasoning_budget,
+            timeout_seconds=timeout,
+        )
+
+    def _openrouter(model: str) -> OpenRouterClient | None:
+        if not openrouter_key.strip():
+            return None
+        return OpenRouterClient(
+            openrouter_key,
+            model,
+            base_url=openrouter_base_url,
+            max_tokens=nvidia_max_tokens,
             timeout_seconds=timeout,
         )
 
@@ -594,13 +649,20 @@ def create_llm_client(
         fallback = _openai(fallback_model) or _nvidia(fallback_model)
         return _resilient_pair(primary, fallback, default_model) or primary
 
+    if provider == "openrouter":
+        primary = _openrouter(default_model)
+        if primary is None:
+            raise LLMError("LLM_PROVIDER=openrouter but OPENROUTER_API_KEY is not set")
+        fallback = _openrouter(fallback_model) or _nvidia(fallback_model) or _openai(fallback_model) or _anthropic(fallback_model)
+        return _resilient_pair(primary, fallback, default_model) or primary
+
     if nvidia_key.strip() and (
         _is_nvidia_model(default_model)
         or (not anthropic_key.strip() and not openai_key.strip())
     ):
         primary = _nvidia(default_model)
         if primary:
-            fallback = _nvidia(fallback_model) or _openai(fallback_model) or _anthropic(fallback_model)
+            fallback = _nvidia(fallback_model) or _openrouter(fallback_model) or _openai(fallback_model) or _anthropic(fallback_model)
             return _resilient_pair(primary, fallback, default_model) or primary
 
     if default_model.startswith("claude"):
@@ -622,9 +684,11 @@ def create_model_client(
     openai_key: str = "",
     nvidia_key: str = "",
     zenmux_key: str = "",
+    openrouter_key: str = "",
     llm_provider: str = "auto",
     nvidia_base_url: str = NVIDIA_DEFAULT_BASE_URL,
     zenmux_base_url: str = ZENMUX_DEFAULT_BASE_URL,
+    openrouter_base_url: str = OPENROUTER_DEFAULT_BASE_URL,
     nvidia_enable_thinking: bool = False,
     nvidia_max_tokens: int = 16384,
     nvidia_temperature: float = 1.0,
@@ -646,6 +710,16 @@ def create_model_client(
             zenmux_key,
             model,
             base_url=zenmux_base_url,
+            max_tokens=nvidia_max_tokens,
+            timeout_seconds=timeout,
+        )
+    elif provider == "openrouter":
+        if not openrouter_key.strip():
+            raise LLMError("OpenRouter API key required when LLM_PROVIDER=openrouter")
+        client: LLMClient = OpenRouterClient(
+            openrouter_key,
+            model,
+            base_url=openrouter_base_url,
             max_tokens=nvidia_max_tokens,
             timeout_seconds=timeout,
         )

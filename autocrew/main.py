@@ -14,7 +14,7 @@ from rich.table import Table
 
 from autocrew.autopilot import run_autopilot
 from autocrew.analyzer.idea_analyzer import analyze_idea
-from autocrew.analyzer.llm_client import create_llm_client, create_model_client
+from autocrew.analyzer.llm_client import LLMClient, create_llm_client, create_model_client
 from autocrew.analyzer.project_model import ProjectContext
 from autocrew.config import settings
 from autocrew.crew.crew_runner import run_crew
@@ -24,7 +24,11 @@ from autocrew.debate.debate_runner import (
     render_round_summary,
     run_debate,
 )
-from autocrew.debate.model_router import DualModelRouter
+from autocrew.debate.model_router import (
+    DualModelRouter,
+    PerAgentModelRouter,
+    parse_per_agent_models,
+)
 from autocrew.planner import write_plan_docs
 from autocrew.progress_log import ProgressLogger, set_progress_logger
 from autocrew.squad.squad_builder import build_squad
@@ -59,6 +63,8 @@ def _get_llm():
         openai_key=settings.openai_api_key,
         nvidia_key=settings.nvidia_api_key,
         zenmux_key=settings.zenmux_api_key,
+        openrouter_key=settings.openrouter_api_key,
+        openrouter_base_url=settings.openrouter_base_url,
         default_model=settings.default_llm,
         fallback_model=settings.fallback_llm,
         llm_provider=settings.llm_provider,
@@ -81,6 +87,8 @@ def _llm_settings_kwargs() -> dict:
         "openai_key": settings.openai_api_key,
         "nvidia_key": settings.nvidia_api_key,
         "zenmux_key": settings.zenmux_api_key,
+        "openrouter_key": settings.openrouter_api_key,
+        "openrouter_base_url": settings.openrouter_base_url,
         "llm_provider": settings.llm_provider,
         "nvidia_base_url": settings.nvidia_base_url,
         "zenmux_base_url": settings.zenmux_base_url,
@@ -128,6 +136,50 @@ def _get_debate_router(dual_model: bool) -> DualModelRouter | None:
         implementation_model=implementation_model,
     )
 
+
+
+
+def _get_per_agent_router() -> PerAgentModelRouter | None:
+    """Build a PerAgentModelRouter from the debate_per_agent_models config.
+
+    Returns None if the config is empty or invalid.
+    """
+    if not settings.has_api_keys():
+        return None
+    role_models = parse_per_agent_models(settings.debate_per_agent_models)
+    if not role_models:
+        return None
+
+    kwargs = _llm_settings_kwargs()
+    default_model = settings.fallback_llm
+    default_client = create_model_client(default_model, **kwargs)
+
+    client_cache: dict[str, LLMClient] = {default_model: default_client}
+    role_model_map: dict[str, tuple[LLMClient, str]] = {}
+
+    for role, model_name in role_models.items():
+        if model_name == "deterministic":
+            continue
+        if model_name not in client_cache:
+            client_cache[model_name] = create_model_client(model_name, **kwargs)
+        role_model_map[role] = (client_cache[model_name], model_name)
+
+    if not role_model_map:
+        return None
+
+    return PerAgentModelRouter(
+        role_model_map=role_model_map,
+        default_llm=default_client,
+        default_model=default_model,
+    )
+
+
+def _get_router(use_dual: bool) -> DualModelRouter | PerAgentModelRouter | None:
+    """Get the appropriate router: per-agent if configured, else dual-model."""
+    per_agent = _get_per_agent_router()
+    if per_agent is not None:
+        return per_agent
+    return _get_debate_router(use_dual)
 
 def _build_tasks_no_llm(squad: Squad, context: ProjectContext):
     return build_tasks(squad, context, llm_call=lambda _: "[]")
@@ -376,9 +428,9 @@ def debate(
     _display_squad(squad)
 
     if use_dual and settings.has_api_keys():
-        router = _get_debate_router(True)
+        router = _get_router(True)
         if router:
-            console.print(Panel(router.summary(), title="Dual-model debate"))
+            console.print(Panel(router.summary(), title="Model routing"))
         else:
             console.print("[yellow]Dual-model requested but both models are identical — using single model.[/yellow]")
 
@@ -389,7 +441,7 @@ def debate(
     if settings.has_api_keys():
         console.print("[bold]Running LLM-powered debate...[/bold]")
         try:
-            router = _get_debate_router(use_dual)
+            router = _get_router(use_dual)
             if router:
                 result = run_debate(
                     context, squad, root, settings.output_dir,
@@ -530,7 +582,7 @@ def build(
 
     use_llm = settings.has_api_keys() and not simulation
     use_dual = settings.debate_dual_model if dual_model is None else dual_model
-    router = _get_debate_router(use_dual) if use_llm else None
+    router = _get_router(use_dual) if use_llm else None
     effective_limit = limit
     task_count = len(tasks if limit <= 0 else tasks[:limit])
 
@@ -659,7 +711,7 @@ def autopilot(
     squad = load_squad(sq_file)
     root = project_root or context.codebase_path or "."
     use_dual = settings.debate_dual_model if dual_model is None else dual_model
-    router = _get_debate_router(use_dual)
+    router = _get_router(use_dual)
     llm = None if router else _get_llm()
 
     console.print(Panel(
@@ -790,6 +842,38 @@ def squad(
     loaded = load_squad(sq_file)
     console.print(f"[dim]Squad file:[/dim] {sq_file}\n")
     _display_squad(loaded)
+
+
+@app.command()
+def metrics(
+    backfill: bool = typer.Option(
+        False,
+        "--backfill",
+        help="Import round/token estimates from saved debate_result.json files",
+    ),
+    metrics_dir: Optional[str] = typer.Option(
+        None, "--metrics-dir", help="Metrics database directory"
+    ),
+) -> None:
+    """Show debate/build cost, latency, and round-count statistics from persisted logs."""
+    from autocrew.metrics.backfill import backfill_debate_from_results
+    from autocrew.metrics.report import format_metrics_report, query_metrics
+
+    settings.ensure_dirs()
+    target_dir = metrics_dir or settings.metrics_dir
+
+    if backfill:
+        debate_files = list(Path(settings.output_dir).glob("debate/*/debate_result.json"))
+        if not debate_files:
+            console.print("[yellow]No debate_result.json files found to backfill.[/yellow]")
+        else:
+            ids = backfill_debate_from_results(debate_files, metrics_dir=target_dir)
+            console.print(f"[green]Backfilled {len(ids)} debate session(s).[/green]")
+
+    report_data = query_metrics(target_dir)
+    console.print(format_metrics_report(report_data))
+    console.print(f"\n[dim]Database:[/dim] {Path(target_dir) / 'session_metrics.db'}")
+    console.print(f"[dim]JSONL:[/dim] {Path(target_dir) / 'agent_calls.jsonl'}")
 
 
 @app.command()

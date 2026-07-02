@@ -16,6 +16,7 @@ from autocrew.crew.llm_task_executor import execute_task_with_llm
 from autocrew.crew.parallel_git import run_parallel_group_with_git
 from autocrew.crew.task_context import inject_task_context
 from autocrew.debate.model_router import DualModelRouter
+from autocrew.metrics import begin_session, end_session
 from autocrew.squad.squad_model import AgentConfig, AgentRole, Squad
 from autocrew.tasks.task_model import TaskConfig
 from autocrew.tools.file_tools import write_file
@@ -266,6 +267,7 @@ def run_crew(
     log_path = str(Path(settings.logs_dir) / f"run_{timestamp}.log")
     crew_logger = logger or CrewLogger(log_path=log_path)
 
+    begin_session(context.project_name, phase="build")
     active_tasks = _resolve_tasks(tasks, task_limit)
     allowed_ids = {t.task_id for t in active_tasks}
 
@@ -342,6 +344,14 @@ def run_crew(
     if task_limit > 0 and task_limit < len(tasks):
         summary += f" (limited from {len(tasks)} total tasks)"
     crew_logger.log(summary)
+    end_session(
+        phase="build",
+        extra={
+            "use_llm": use_llm,
+            "tasks_executed": len(all_results),
+            "task_limit": task_limit,
+        },
+    )
     return summary
 
 

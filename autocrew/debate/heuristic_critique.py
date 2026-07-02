@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from autocrew.analyzer.project_model import ProjectContext
+from autocrew.debate.critique_schema import attach_structured_fields
 from autocrew.debate.debate_model import AgentCritique
 from autocrew.squad.squad_model import AgentConfig, AgentRole
 
@@ -116,15 +117,9 @@ def generate_heuristic_critique(
             suggestions.append(f"Review stub/TODO code in partial features: {', '.join(partial[:3])}")
 
     elif role == AgentRole.PROGRESS_TRACKER:
-        done_count = len(_features_by_status(context, "done"))
-        total = len(context.features) or 1
-        pct = done_count / total * 100
-        if pct < 100 and not _plan_covers(plan_text, ["priority", "next"]):
-            suggestions.append(f"Plan should prioritize remaining {100 - pct:.0f}% of work")
-        if context.missing_parts:
-            for part in context.missing_parts[:3]:
-                if not _plan_covers(plan_text, [part.split()[0]]):
-                    concerns.append(f"Tracker: missing part not in plan — {part}")
+        from autocrew.debate.tracker_critique import generate_tracker_critique
+
+        return generate_tracker_critique(agent, context, plan_text, round_number, [])
 
     elif role == AgentRole.FULLSTACK_DEV:
         for name in high_gaps[:3]:
@@ -133,12 +128,14 @@ def generate_heuristic_critique(
 
     approved = len(blockers) == 0 and len(concerns) == 0
 
-    return AgentCritique(
-        agent_role=agent.role.value,
-        agent_name=agent.name,
-        round_number=round_number,
-        approved=approved,
-        concerns=concerns,
-        suggestions=suggestions,
-        blockers=blockers,
+    return attach_structured_fields(
+        AgentCritique(
+            agent_role=agent.role.value,
+            agent_name=agent.name,
+            round_number=round_number,
+            approved=approved,
+            concerns=concerns,
+            suggestions=suggestions,
+            blockers=blockers,
+        )
     )

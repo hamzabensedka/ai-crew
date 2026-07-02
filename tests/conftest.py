@@ -15,6 +15,7 @@ def isolated_output_dirs(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "reports_dir", str(output / "reports"))
     monkeypatch.setattr(settings, "logs_dir", str(output / "logs"))
     monkeypatch.setattr(settings, "contexts_dir", str(output / "contexts"))
+    monkeypatch.setattr(settings, "metrics_dir", str(output / "metrics"))
     (output / "contexts").mkdir(parents=True, exist_ok=True)
     (output / "squads").mkdir(parents=True, exist_ok=True)
     (output / "reports").mkdir(parents=True, exist_ok=True)

@@ -79,6 +79,20 @@ class PerAgentModelRouter:
 
     A per-agent model mapping overrides the dual-model split. Any role not in
     the mapping falls back to the default (planning) model.
+
+    Example mapping:
+        {
+            "product_owner": "claude-3-5-sonnet-20241022",
+            "architect": "moonshotai/kimi-k2.6",
+            "backend_developer": "deepseek-ai/deepseek-v4-pro",
+            "frontend_developer": "deepseek-ai/deepseek-v4-pro",
+            "devops_engineer": "deepseek-ai/deepseek-v4-pro",
+            "data_engineer": "deepseek-ai/deepseek-v4-pro",
+            "ai_engineer": "deepseek-ai/deepseek-v4-pro",
+            "tester": "moonshotai/kimi-k2.6",
+            "code_reviewer": "claude-3-5-sonnet-20241022",
+            "progress_tracker": "deterministic"
+        }
     """
 
     def __init__(
@@ -139,3 +153,19 @@ def parse_per_agent_models(config_str: str) -> dict[str, str]:
         return {str(k): str(v) for k, v in data.items() if v}
     except (json.JSONDecodeError, TypeError):
         return {}
+
+
+# Default per-agent model recommendations (can be used as a starting point)
+DEFAULT_PER_AGENT_MODELS: dict[str, str] = {
+    AgentRole.PRODUCT_OWNER.value: "",  # Set via config — reasoning model (e.g. Kimi/Claude)
+    AgentRole.ARCHITECT.value: "",  # Set via config — reasoning model
+    AgentRole.BACKEND_DEV.value: "",  # Set via config — code model (e.g. DeepSeek)
+    AgentRole.FRONTEND_DEV.value: "",  # Set via config — code model
+    AgentRole.FULLSTACK_DEV.value: "",  # Set via config — code model
+    AgentRole.DEVOPS.value: "",  # Set via config — code model
+    AgentRole.DATA_ENGINEER.value: "",  # Set via config — code model
+    AgentRole.AI_ENGINEER.value: "",  # Set via config — code model
+    AgentRole.TESTER.value: "",  # Set via config — reasoning model
+    AgentRole.CODE_REVIEWER.value: "",  # Set via config — reasoning model (cross-model)
+    AgentRole.PROGRESS_TRACKER.value: "deterministic",  # No LLM (Step 1)
+}
