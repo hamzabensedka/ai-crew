@@ -147,7 +147,7 @@ class TestDebateTiers:
 
 class TestParallelDebateLatency:
     def test_parallel_tiers_faster_than_sequential(self, tmp_path, isolated_output_dirs, monkeypatch):
-        delay = 0.03
+        delay = 0.05
         context = _full_squad_context()
         squad = build_squad(context)
         project_root = tmp_path / "project"

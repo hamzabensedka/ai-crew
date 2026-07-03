@@ -81,6 +81,7 @@ class TestNoApiKeys:
         monkeypatch.setattr(settings, "openai_api_key", "")
         monkeypatch.setattr(settings, "nvidia_api_key", "")
         monkeypatch.setattr(settings, "zenmux_api_key", "")
+        monkeypatch.setattr(settings, "openrouter_api_key", "")
         result = runner.invoke(app, ["new", "Build a CRM"])
         assert result.exit_code == 1
         assert "Cursor" in result.stdout or "cursor-workflow" in result.stdout

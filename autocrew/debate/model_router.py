@@ -1,4 +1,4 @@
-"""Route debate/build agents to different LLM models.
+﻿"""Route debate/build agents to different LLM models.
 
 Supports two routing modes:
 - DualModelRouter: 2 groups (planning vs implementation)
@@ -91,6 +91,22 @@ class PerAgentModelRouter:
         self.role_model_map = role_model_map
         self.default_llm = default_llm
         self.default_model = default_model
+
+    @property
+    def planning_model(self) -> str:
+        """Model used by planning agents (product_owner, or default)."""
+        if "product_owner" in self.role_model_map:
+            return self.role_model_map["product_owner"][1]
+        return self.default_model
+
+    @property
+    def implementation_model(self) -> str:
+        """Model used by implementation agents (backend_developer, or default)."""
+        if "backend_developer" in self.role_model_map:
+            return self.role_model_map["backend_developer"][1]
+        if "fullstack_developer" in self.role_model_map:
+            return self.role_model_map["fullstack_developer"][1]
+        return self.default_model
 
     def for_agent(self, agent: AgentConfig) -> tuple[LLMClient, str]:
         key = agent.role.value

@@ -121,6 +121,7 @@ class TestDebateCLI:
         monkeypatch.setattr(settings, "openai_api_key", "")
         monkeypatch.setattr(settings, "nvidia_api_key", "")
         monkeypatch.setattr(settings, "zenmux_api_key", "")
+        monkeypatch.setattr(settings, "openrouter_api_key", "")
         monkeypatch.setattr(settings, "require_confirmation", False)
 
         result = runner.invoke(
