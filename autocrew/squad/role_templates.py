@@ -1,4 +1,4 @@
-"""Base role templates for squad generation."""
+﻿"""Base role templates for squad generation."""
 
 from autocrew.squad.squad_model import AgentRole
 
@@ -44,7 +44,7 @@ ROLE_TEMPLATES: dict[AgentRole, dict] = {
             "You write clean, tested, production-ready code with proper error handling and security practices."
         ),
         "tools": ["file_read", "file_write", "run_command", "web_search"],
-        "can_write_to": ["/backend", "/api", "/server", "/src/api"],
+        "can_write_to": ["/backend", "/api", "/server", "/src/api", "/docs"],
         "can_read": ["/docs", "/"],
         "allow_delegation": False,
     },
@@ -59,7 +59,7 @@ ROLE_TEMPLATES: dict[AgentRole, dict] = {
             "You build accessible, responsive, well-structured UIs with good UX."
         ),
         "tools": ["file_read", "file_write", "run_command", "web_search"],
-        "can_write_to": ["/frontend", "/app", "/src/app", "/components", "/pages"],
+        "can_write_to": ["/frontend", "/app", "/src/app", "/components", "/pages", "/docs"],
         "can_read": ["/docs", "/"],
         "allow_delegation": False,
     },
@@ -74,7 +74,7 @@ ROLE_TEMPLATES: dict[AgentRole, dict] = {
             "You ship complete features end to end with tests."
         ),
         "tools": ["file_read", "file_write", "run_command", "web_search"],
-        "can_write_to": ["/frontend", "/backend", "/app", "/src", "/components"],
+        "can_write_to": ["/frontend", "/backend", "/app", "/src", "/components", "/docs"],
         "can_read": ["/docs", "/"],
         "allow_delegation": False,
     },
@@ -89,7 +89,7 @@ ROLE_TEMPLATES: dict[AgentRole, dict] = {
             "You automate deployments and ensure reliable infrastructure."
         ),
         "tools": ["file_read", "file_write", "run_command", "web_search"],
-        "can_write_to": ["/.github", "/docker", "/infra", "/deploy"],
+        "can_write_to": ["/.github", "/docker", "/infra", "/deploy", "/docs"],
         "can_read": ["*"],
         "allow_delegation": False,
     },
@@ -102,7 +102,7 @@ ROLE_TEMPLATES: dict[AgentRole, dict] = {
             "You are a data engineer specializing in ETL, database design, and data quality."
         ),
         "tools": ["file_read", "file_write", "run_command", "web_search"],
-        "can_write_to": ["/backend", "/migrations", "/data", "/db"],
+        "can_write_to": ["/backend", "/migrations", "/data", "/db", "/docs"],
         "can_read": ["/docs", "/"],
         "allow_delegation": False,
     },
@@ -115,7 +115,7 @@ ROLE_TEMPLATES: dict[AgentRole, dict] = {
             "You are an AI engineer expert in LLM integration, RAG, and prompt engineering."
         ),
         "tools": ["file_read", "file_write", "run_command", "web_search"],
-        "can_write_to": ["/backend", "/ai", "/src/ai", "/ml"],
+        "can_write_to": ["/backend", "/ai", "/src/ai", "/ml", "/docs"],
         "can_read": ["/docs", "/"],
         "allow_delegation": False,
     },
@@ -128,7 +128,7 @@ ROLE_TEMPLATES: dict[AgentRole, dict] = {
             "You are a QA engineer who writes thorough test suites and catches edge cases."
         ),
         "tools": ["file_read", "file_write", "run_command"],
-        "can_write_to": ["/tests", "/__tests__", "/test"],
+        "can_write_to": ["/tests", "/__tests__", "/test", "/docs"],
         "can_read": ["*"],
         "allow_delegation": False,
     },

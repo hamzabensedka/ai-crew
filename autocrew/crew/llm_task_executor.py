@@ -193,8 +193,19 @@ def execute_task_with_llm(
     try:
         data = call_with_json_retry(measured_call, prompt, max_retries=1)
     except LLMError:
-        raw = measured_call(prompt)
-        data = _extract_json_object(raw)
+        try:
+            raw = measured_call(prompt)
+            data = _extract_json_object(raw)
+        except (json.JSONDecodeError, LLMError):
+            # Fallback: treat raw text as document content for doc tasks
+            if _is_doc_task(task) and task.output_path:
+                raw_stripped = raw.strip() if raw else ""
+                if raw_stripped:
+                    data = {"content": raw_stripped, "summary": f"Generated: {task.title}"}
+                else:
+                    raise LLMError(f"LLM returned empty response for task '{task.title}'")
+            else:
+                raise LLMError(f"LLM response could not be parsed as JSON for task '{task.title}'")
 
     if not isinstance(data, dict):
         raise LLMError("LLM build response must be a JSON object")
