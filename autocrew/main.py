@@ -194,6 +194,36 @@ def _get_router(use_dual: bool) -> DualModelRouter | PerAgentModelRouter | RoleM
         return role_router
     return _get_debate_router(use_dual)
 
+
+def _router_mode_label(router: ModelRouter | None) -> str:
+    if isinstance(router, RoleModelRouter):
+        return "free-tier role routing (NIM -> Groq -> Cerebras -> OpenRouter)"
+    if isinstance(router, PerAgentModelRouter):
+        return "per-agent JSON routing"
+    if isinstance(router, DualModelRouter):
+        return "dual-model routing"
+    if settings.llm_free_tier_chain:
+        return "LEGACY single model (free-tier chain not active — upgrade autocrew or check .env)"
+    return f"legacy single model ({settings.default_llm})"
+
+
+def _resolve_llm_routing(
+    use_dual: bool,
+) -> tuple[DualModelRouter | PerAgentModelRouter | RoleModelRouter | None, LLMClient | None, str]:
+    """Return (router, fallback_llm, mode_label). Router takes precedence over llm."""
+    settings.sync_provider_env()
+    router = _get_router(use_dual)
+    if router is not None:
+        return router, None, _router_mode_label(router)
+    if not settings.has_api_keys():
+        raise RuntimeError("No LLM API keys configured")
+    if settings.llm_free_tier_chain:
+        console.print(
+            "[yellow]Warning:[/yellow] LLM_FREE_TIER_CHAIN=true but role router did not start. "
+            "Install the latest autocrew + litellm, or set LLM_FREE_TIER_CHAIN=false."
+        )
+    return None, _get_llm(), _router_mode_label(None)
+
 def _build_tasks_no_llm(squad: Squad, context: ProjectContext):
     return build_tasks(squad, context, llm_call=lambda _: "[]")
 
@@ -724,9 +754,13 @@ def autopilot(
     squad = load_squad(sq_file)
     root = project_root or context.codebase_path or "."
     use_dual = settings.debate_dual_model if dual_model is None else dual_model
-    router = _get_router(use_dual)
-    llm = None if router else _get_llm()
+    router, llm, routing_mode = _resolve_llm_routing(use_dual)
 
+    import autocrew
+
+    console.print(
+        f"[dim]Package: {Path(autocrew.__file__).resolve().parent}[/dim]"
+    )
     console.print(Panel(
         f"Autopilot for [bold]{context.project_name}[/bold]\n\n"
         f"Crew stops only when ALL of these are true:\n"
@@ -739,10 +773,7 @@ def autopilot(
         title="AutoCrew Autopilot",
     ))
 
-    if router:
-        console.print(Panel(router.summary(), title="Dual-model crew"))
-    else:
-        console.print(f"[dim]Single model: {settings.default_llm}[/dim]")
+    console.print(Panel(router.summary() if router else routing_mode, title=f"LLM routing — {routing_mode}"))
 
     if not yes and settings.require_confirmation:
         if not typer.confirm("Start autopilot loop?", default=True):
@@ -887,6 +918,59 @@ def metrics(
     console.print(format_metrics_report(report_data))
     console.print(f"\n[dim]Database:[/dim] {Path(target_dir) / 'session_metrics.db'}")
     console.print(f"[dim]JSONL:[/dim] {Path(target_dir) / 'agent_calls.jsonl'}")
+
+
+@app.command()
+def doctor() -> None:
+    """Verify install, .env, and LLM routing (run before autopilot)."""
+    import autocrew
+
+    pkg = Path(autocrew.__file__).resolve().parent
+    console.print(Panel(f"[bold]{pkg}[/bold]", title="autocrew package"))
+
+    checks: list[tuple[str, bool, str]] = []
+
+    try:
+        import litellm  # noqa: F401
+
+        checks.append(("litellm installed", True, "ok"))
+    except ImportError:
+        checks.append(("litellm installed", False, "pip install litellm"))
+
+    checks.append(("LLM_FREE_TIER_CHAIN", settings.llm_free_tier_chain, str(settings.llm_free_tier_chain)))
+    checks.append(("NVIDIA_API_KEY", bool(settings.nvidia_api_key.strip()), "set" if settings.nvidia_api_key.strip() else "missing"))
+    checks.append(("GROQ_API_KEY", bool(settings.groq_api_key.strip()), "set" if settings.groq_api_key.strip() else "missing"))
+    checks.append(("CEREBRAS_API_KEY", bool(settings.cerebras_api_key.strip()), "set" if settings.cerebras_api_key.strip() else "missing"))
+    checks.append(("DEBATE_PER_AGENT_MODELS empty", not parse_per_agent_models(settings.debate_per_agent_models), "must be empty for role tiers"))
+
+    try:
+        router, _, mode = _resolve_llm_routing(settings.debate_dual_model)
+        checks.append(("RoleModelRouter active", isinstance(router, RoleModelRouter), mode))
+        if router:
+            console.print(Panel(router.summary(), title=f"Routing: {mode}"))
+    except Exception as exc:
+        checks.append(("RoleModelRouter active", False, str(exc)))
+
+    has_debate_v2 = (pkg / "analyzer" / "litellm_chain.py").is_file()
+    checks.append(("free-tier chain code present", has_debate_v2, "litellm_chain.py" if has_debate_v2 else "OLD PACKAGE — reinstall"))
+
+    table = Table(title="Doctor checks")
+    table.add_column("Check")
+    table.add_column("OK")
+    table.add_column("Detail")
+    all_ok = True
+    for name, ok, detail in checks:
+        if not ok:
+            all_ok = False
+        table.add_row(name, "[green]yes[/green]" if ok else "[red]no[/red]", detail)
+    console.print(table)
+
+    if all_ok:
+        console.print("[green]Ready. Expect: Consultant phase -> 3 core debaters -> plan review.[/green]")
+        console.print("[green]PO/Architect should use Kimi (reasoning), not Qwen coder.[/green]")
+    else:
+        console.print("[red]Fix failures above, then re-run autocrew doctor.[/red]")
+        raise typer.Exit(1)
 
 
 @app.command()

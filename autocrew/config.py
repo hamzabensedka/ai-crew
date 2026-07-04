@@ -108,7 +108,7 @@ class Settings(BaseSettings):
             "OPENROUTER_API_KEY": self.openrouter_api_key,
         }
         for env_key, value in mapping.items():
-            if value.strip() and not os.environ.get(env_key, "").strip():
+            if value.strip():
                 os.environ[env_key] = value.strip()
 
     def ensure_dirs(self) -> None:
