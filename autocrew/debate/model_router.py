@@ -27,7 +27,8 @@ class ModelRouter(Protocol):
     def for_build_task(self, agent: AgentConfig, task: TaskConfig) -> tuple[LLMClient, str]: ...
 
 # Heavy doc/code generation tasks — use implementation model even for planning roles
-BUILD_IMPLEMENTATION_TASKS = frozenset({"arch_design", "po_product_spec"})
+# Code-heavy doc tasks only; PO product spec stays on reasoning model (Kimi)
+BUILD_IMPLEMENTATION_TASKS = frozenset({"arch_design"})
 
 # Planning / review agents — typically stronger reasoning models (e.g. Kimi)
 PLANNING_ROLES = {

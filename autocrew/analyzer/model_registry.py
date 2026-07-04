@@ -5,13 +5,14 @@ from __future__ import annotations
 from autocrew.squad.squad_model import AgentRole
 
 # NIM (primary) model IDs — OpenAI-compatible on integrate.api.nvidia.com
+# Note: qwen3-coder-480b EOL on NIM 2026-06-11; use deepseek/qwen2.5-coder instead
 NIM_REASONING_MODEL = "moonshotai/kimi-k2.6"
-NIM_CODER_MODEL = "qwen/qwen3-coder-480b-a35b-instruct"
-NIM_REVIEWER_MODEL = "z-ai/glm-5"  # Kimi K2 or GLM-5 per spec
+NIM_CODER_MODEL = "deepseek-ai/deepseek-v3.1-671b-instruct"
+NIM_REVIEWER_MODEL = "moonshotai/kimi-k2.6"
 
-# Groq free-tier equivalents
+# Groq free-tier equivalents (no nested vendor/ prefix in model id)
 GROQ_REASONING_MODEL = "moonshotai/kimi-k2-instruct"
-GROQ_CODER_MODEL = "qwen/qwen3-32b"
+GROQ_CODER_MODEL = "qwen-qwen3-32b"
 
 # Cerebras free-tier equivalents
 CEREBRAS_REASONING_MODEL = "llama-3.3-70b"
@@ -19,7 +20,7 @@ CEREBRAS_CODER_MODEL = "qwen-3-32b"
 
 # OpenRouter (paid last resort)
 OR_REASONING_MODEL = "moonshotai/kimi-k2"
-OR_CODER_MODEL = "qwen/qwen3-coder"
+OR_CODER_MODEL = "deepseek/deepseek-chat"
 OR_REVIEWER_MODEL = "moonshotai/kimi-k2"
 
 REASONING_ROLES = frozenset({

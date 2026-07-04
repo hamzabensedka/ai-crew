@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from autocrew.analyzer.llm_client import LLMError, NVIDIA_DEFAULT_BASE_URL, OPENROUTER_DEFAULT_BASE_URL
+from autocrew.analyzer.llm_client import LLMError
 from autocrew.analyzer.model_registry import ModelTier, cerebras_model_for_tier, groq_model_for_tier, nim_model_for_tier, openrouter_model_for_tier
 from autocrew.analyzer.provider_tracker import (
     PAID_PROVIDER,
@@ -24,7 +24,23 @@ from autocrew.progress_log import progress_log
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 CEREBRAS_BASE_URL = "https://api.cerebras.ai/v1"
 
-_FALLBACK_MARKERS = ("429", "503", "502", "504", "524", "rate limit", "timeout", "timed out")
+# Do NOT use LiteLLM's `fallbacks=` param — it reuses the primary api_base for all hops.
+_FALLBACK_MARKERS = (
+    "429",
+    "503",
+    "502",
+    "504",
+    "524",
+    "410",
+    "404",
+    "rate limit",
+    "timeout",
+    "timed out",
+    "gone",
+    "end of life",
+    "not found",
+    "not available",
+)
 
 
 @dataclass(frozen=True)
@@ -100,7 +116,7 @@ def _extract_usage(response: Any) -> tuple[int, int]:
 
 
 class LiteLLMFallbackClient:
-    """Try NIM → Groq → Cerebras → OpenRouter using LiteLLM completion API."""
+    """Try NIM → Groq → Cerebras → OpenRouter — one provider per attempt, correct api_base each time."""
 
     def __init__(self, tier: ModelTier, *, label: str | None = None) -> None:
         self.tier = tier
@@ -121,13 +137,13 @@ class LiteLLMFallbackClient:
         import litellm
 
         litellm.drop_params = True
+        litellm.suppress_debug_info = True
         hops = _build_hops(self.tier)
         if not hops:
             raise LLMError(
                 "No provider API keys configured (need NVIDIA_API_KEY at minimum)"
             )
 
-        fallback_model_ids = [_litellm_model_id(h) for h in hops[1:]]
         last_error: Exception | None = None
         tracker = get_provider_tracker()
 
@@ -148,13 +164,10 @@ class LiteLLMFallbackClient:
             if hop.api_base:
                 params["api_base"] = hop.api_base
 
-            if index == 0 and fallback_model_ids:
-                params["fallbacks"] = fallback_model_ids
-
             try:
                 progress_log(
-                    f"LLM [{self.label}] → {hop.provider}/{hop.model.split('/')[-1]}",
-                    verbose_only=True,
+                    f"LLM [{self.label}] -> {hop.provider}/{hop.model.split('/')[-1]} "
+                    f"({hop.api_base or 'default'})",
                 )
                 start = time.perf_counter()
                 response = litellm.completion(**params)
@@ -163,27 +176,18 @@ class LiteLLMFallbackClient:
                 content = _extract_content(response)
                 in_tok, out_tok = _extract_usage(response)
                 self._last_usage = {"input_tokens": in_tok, "output_tokens": out_tok}
-
-                served_provider = hop.provider
-                served_model = hop.model
-                hidden = getattr(response, "_hidden_params", {}) or {}
-                if hidden.get("fallback_used"):
-                    served_provider = str(hidden.get("fallback_provider", served_provider))
-                    served_model = str(hidden.get("fallback_model", served_model))
-
-                self._last_provider = served_provider
-                self._last_model = served_model
+                self._last_provider = hop.provider
+                self._last_model = hop.model
 
                 cost_eur = 0.0
-                if hop.is_paid or served_provider == PAID_PROVIDER:
+                if hop.is_paid:
                     cost_eur = estimate_openrouter_cost_eur(in_tok, out_tok)
                     add_daily_openrouter_spend(cost_eur)
 
-                tracker.record_call(served_provider, is_paid=(hop.is_paid or served_provider == PAID_PROVIDER), cost_eur=cost_eur)
+                tracker.record_call(hop.provider, is_paid=hop.is_paid, cost_eur=cost_eur)
                 progress_log(
-                    f"LLM [{self.label}] served by {served_provider} "
-                    f"({served_model.split('/')[-1]}, {elapsed_ms:.0f}ms, "
-                    f"paid session total {tracker.paid_spend_eur:.4f} EUR)"
+                    f"LLM [{self.label}] served by {hop.provider} "
+                    f"({hop.model.split('/')[-1]}, {elapsed_ms:.0f}ms)"
                 )
                 check_paid_fallback_ratio_after_call()
                 return content
@@ -193,22 +197,13 @@ class LiteLLMFallbackClient:
                 wait_s = _parse_retry_after_seconds(exc)
                 if wait_s > 0:
                     tracker.record_rate_limit_wait(hop.provider, wait_s * 1000)
-                    progress_log(
-                        f"LLM [{self.label}] {hop.provider} rate-limited — "
-                        f"waited {wait_s:.0f}s before fallback"
-                    )
                     time.sleep(wait_s)
 
-                if _should_fallback(exc) and index < len(hops) - 1:
+                if index < len(hops) - 1:
                     next_hop = hops[index + 1]
                     progress_log(
-                        f"LLM [{self.label}] {hop.provider} failed ({exc}) — "
-                        f"falling back to {next_hop.provider}"
-                    )
-                    continue
-                if index < len(hops) - 1:
-                    progress_log(
-                        f"LLM [{self.label}] {hop.provider} error — trying next provider"
+                        f"LLM [{self.label}] {hop.provider} failed — "
+                        f"trying {next_hop.provider}: {str(exc)[:120]}"
                     )
                     continue
                 break

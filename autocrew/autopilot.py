@@ -230,13 +230,14 @@ def run_autopilot(
                 max_rounds=debate_rounds,
             )
 
-        blockers = debate.rounds[-1].total_blockers if debate.rounds else 999
+        blockers = debate.rounds[-1].total_blockers if debate.rounds else (0 if skip_debate else 999)
         debate_tasks = build_tasks_from_debate(debate, squad, context)
         tasks: list[TaskConfig] = merge_foundation_tasks(squad, context, debate_tasks)
         save_tasks(tasks, output_dir, context.project_name)
 
         tasks_built = 0
-        if debate_tasks and not debate.consensus_reached:
+        run_build = bool(debate_tasks) or skip_debate
+        if run_build and (not debate.consensus_reached or skip_debate):
             if on_phase:
                 on_phase(f"build ({min(build_limit, len(tasks))} tasks)")
             try:
