@@ -10,9 +10,11 @@ from pathlib import Path
 from typing import Callable
 
 from autocrew.analyzer.project_model import ProjectContext
+from autocrew.config import settings
 from autocrew.crew.crew_runner import run_crew
 from autocrew.debate.debate_runner import build_tasks_from_debate, run_debate
-from autocrew.debate.model_router import DualModelRouter
+from autocrew.crew.build_rules import should_skip_architecture_debate
+from autocrew.debate.model_router import ModelRouter
 from autocrew.security_audit import run_llm_security_review, run_security_audit
 from autocrew.squad.squad_model import Squad
 from autocrew.storage import save_tasks
@@ -161,7 +163,7 @@ def run_autopilot(
     run_tests: bool = True,
     run_security: bool = True,
     llm_security: bool = True,
-    dual_router: DualModelRouter | None = None,
+    dual_router: ModelRouter | None = None,
     llm=None,
     use_llm_build: bool = True,
     parallel_git: bool = True,
@@ -182,7 +184,26 @@ def run_autopilot(
 
         if on_phase:
             on_phase("debate (crew review)")
-        if dual_router is not None:
+
+        skip_debate = (
+            settings.build_skip_debate_if_pattern_exists
+            and should_skip_architecture_debate(root)
+        )
+        if skip_debate:
+            if on_phase:
+                on_phase("debate skipped (established pattern)")
+            from autocrew.debate.debate_model import DebateResult
+
+            debate = DebateResult(
+                project_name=context.project_name,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                rounds=[],
+                consensus_reached=True,
+                final_plan_path=str(Path(root) / "docs" / "product.md"),
+                debate_dir="",
+                action_items=[],
+            )
+        elif dual_router is not None:
             debate = run_debate(
                 context,
                 squad,

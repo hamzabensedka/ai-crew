@@ -168,13 +168,41 @@ def should_early_exit(
     *,
     round_number: int,
     min_rounds: int,
+    consecutive_stable_rounds: int = 1,
+    stable_rounds_required: int = 2,
 ) -> bool:
-    """True when this round introduced no new concerns or open questions."""
+    """True when debate positions stabilized for ``stable_rounds_required`` rounds."""
     if round_number < min_rounds:
         return False
     if round_number < 2:
         return False
-    return not diff.has_net_new
+    if diff.has_net_new:
+        return False
+    return consecutive_stable_rounds >= stable_rounds_required
+
+
+@dataclass
+class ConvergenceTracker:
+    """Track consecutive rounds with no meaningful position change."""
+
+    consecutive_stable_rounds: int = 0
+
+    def update(self, diff: ConvergenceDiff) -> None:
+        if diff.has_net_new:
+            self.consecutive_stable_rounds = 0
+        else:
+            self.consecutive_stable_rounds += 1
+
+    def should_exit(
+        self,
+        *,
+        round_number: int,
+        min_rounds: int,
+        stable_rounds_required: int = 2,
+    ) -> bool:
+        if round_number < min_rounds or round_number < 2:
+            return False
+        return self.consecutive_stable_rounds >= stable_rounds_required
 
 
 def log_early_exit_event(

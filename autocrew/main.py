@@ -26,7 +26,9 @@ from autocrew.debate.debate_runner import (
 )
 from autocrew.debate.model_router import (
     DualModelRouter,
+    ModelRouter,
     PerAgentModelRouter,
+    RoleModelRouter,
     parse_per_agent_models,
 )
 from autocrew.planner import write_plan_docs
@@ -174,11 +176,22 @@ def _get_per_agent_router() -> PerAgentModelRouter | None:
     )
 
 
-def _get_router(use_dual: bool) -> DualModelRouter | PerAgentModelRouter | None:
-    """Get the appropriate router: per-agent if configured, else dual-model."""
+def _get_role_router() -> RoleModelRouter | None:
+    """Free-tier provider chain with per-role model assignment."""
+    if not settings.llm_free_tier_chain or not settings.has_api_keys():
+        return None
+    settings.sync_provider_env()
+    return RoleModelRouter()
+
+
+def _get_router(use_dual: bool) -> DualModelRouter | PerAgentModelRouter | RoleModelRouter | None:
+    """Get the appropriate router: per-agent JSON > free-tier role > dual-model."""
     per_agent = _get_per_agent_router()
     if per_agent is not None:
         return per_agent
+    role_router = _get_role_router()
+    if role_router is not None:
+        return role_router
     return _get_debate_router(use_dual)
 
 def _build_tasks_no_llm(squad: Squad, context: ProjectContext):

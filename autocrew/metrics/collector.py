@@ -47,6 +47,7 @@ class SessionMetricsCollector:
         round_number: int | None = None,
         task_id: str | None = None,
         tokens_estimated: bool = True,
+        **kwargs: Any,
     ) -> AgentCallRecord:
         record = AgentCallRecord(
             session_id=self.session_id,
@@ -63,6 +64,9 @@ class SessionMetricsCollector:
             wall_clock_start=wall_clock_start,
             wall_clock_end=wall_clock_end,
             task_id=task_id,
+            provider_used=kwargs.get("provider_used", ""),
+            is_paid_fallback=bool(kwargs.get("is_paid_fallback", False)),
+            rate_limit_wait_ms=float(kwargs.get("rate_limit_wait_ms", 0.0)),
         )
         self.agent_calls.append(record)
         if settings.metrics_enabled:

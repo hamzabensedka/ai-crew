@@ -5,6 +5,8 @@ from __future__ import annotations
 import fnmatch
 from pathlib import Path
 
+from autocrew.context.path_filter import is_scannable_path
+
 
 class ScopeError(PermissionError):
     pass
@@ -43,6 +45,8 @@ def check_write_scope(path: str, can_write_to: list[str], enforce: bool = True) 
 
 def read_file(path: str, project_root: str, can_read: list[str], enforce_scope: bool = True) -> str:
     check_read_scope(path, can_read, enforce_scope)
+    if not is_scannable_path(path, project_root):
+        raise ScopeError(f"Path excluded from model context: '{path}'")
     full = Path(project_root) / path
     return full.read_text(encoding="utf-8", errors="ignore")
 
@@ -71,7 +75,11 @@ def list_directory(
     full = Path(project_root) / path
     if not full.is_dir():
         raise FileNotFoundError(f"Directory not found: {path}")
-    return [str(p.relative_to(Path(project_root))).replace("\\", "/") for p in full.iterdir()]
+    return [
+        str(p.relative_to(Path(project_root))).replace("\\", "/")
+        for p in full.iterdir()
+        if is_scannable_path(str(p.relative_to(Path(project_root))).replace("\\", "/"), project_root)
+    ]
 
 
 def create_folder(

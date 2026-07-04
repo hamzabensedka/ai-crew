@@ -24,6 +24,15 @@ def _read_api_usage(llm_call: Callable[[str], str]) -> tuple[int | None, int | N
     return int(input_tokens), int(output_tokens)
 
 
+def _read_provider_info(llm_call: Callable[[str], str]) -> tuple[str, bool]:
+    client = getattr(llm_call, "__self__", None)
+    provider = getattr(client, "_last_provider", None) or getattr(client, "provider_used", None)
+    if provider:
+        is_paid = provider == "OpenRouter"
+        return str(provider), is_paid
+    return "", False
+
+
 def instrument_llm_call(
     llm_call: Callable[[str], str],
     *,
@@ -44,6 +53,7 @@ def instrument_llm_call(
         wall_end = datetime.now(timezone.utc).isoformat()
 
         api_input, api_output = _read_api_usage(llm_call)
+        provider_used, is_paid = _read_provider_info(llm_call)
         if api_input is not None and api_output is not None:
             input_tokens = api_input
             output_tokens = api_output
@@ -66,6 +76,8 @@ def instrument_llm_call(
             wall_clock_start=wall_start,
             wall_clock_end=wall_end,
             task_id=task_id,
+            provider_used=provider_used,
+            is_paid_fallback=is_paid,
         )
         return result
 

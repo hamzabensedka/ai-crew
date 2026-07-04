@@ -21,6 +21,7 @@ dependencies = [
     "gitpython>=3.1",
     "pathspec>=0.12",
     "python-dotenv>=1.0",
+    "litellm>=1.40",
 ]
 
 [project.optional-dependencies]

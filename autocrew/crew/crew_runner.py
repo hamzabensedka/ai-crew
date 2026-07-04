@@ -15,7 +15,6 @@ from autocrew.crew.crew_logger import CrewLogger
 from autocrew.crew.llm_task_executor import execute_task_with_llm
 from autocrew.crew.parallel_git import run_parallel_group_with_git
 from autocrew.crew.task_context import inject_task_context
-from autocrew.debate.model_router import DualModelRouter
 from autocrew.metrics import begin_session, end_session
 from autocrew.squad.squad_model import AgentConfig, AgentRole, Squad
 from autocrew.tasks.task_model import TaskConfig
@@ -64,7 +63,7 @@ def _execute_task(
     logger: CrewLogger,
     *,
     use_llm: bool,
-    dual_router: DualModelRouter | None,
+    dual_router: ModelRouter | None,
     llm_call: Callable[[str], str] | None,
     skip_git_commit: bool = False,
 ) -> str:
@@ -113,7 +112,7 @@ def _run_phase_sequential(
     max_retries: int,
     *,
     use_llm: bool,
-    dual_router: DualModelRouter | None,
+    dual_router: ModelRouter | None,
     llm_call: Callable[[str], str] | None,
     task_filter: set[str] | None,
     on_task_start: Callable[[AgentConfig, TaskConfig, str], None] | None = None,
@@ -178,7 +177,7 @@ async def _run_parallel_group(
     max_retries: int,
     *,
     use_llm: bool,
-    dual_router: DualModelRouter | None,
+    dual_router: ModelRouter | None,
     llm_call: Callable[[str], str] | None,
     task_filter: set[str] | None,
     on_task_start: Callable[[AgentConfig, TaskConfig, str], None] | None = None,
@@ -234,7 +233,23 @@ async def _run_parallel_group(
     return [item for sublist in group_results for item in sublist]
 
 
+def _limit_to_one_feature(tasks: list[TaskConfig]) -> list[TaskConfig]:
+    """Keep foundation tasks plus the first debate-derived feature task."""
+    foundation: list[TaskConfig] = []
+    feature_tasks: list[TaskConfig] = []
+    for task in tasks:
+        if task.task_id.startswith("debate_"):
+            feature_tasks.append(task)
+        else:
+            foundation.append(task)
+    if not feature_tasks:
+        return tasks
+    return foundation + [feature_tasks[0]]
+
+
 def _resolve_tasks(tasks: list[TaskConfig], limit: int) -> list[TaskConfig]:
+    if settings.build_one_feature_at_a_time and limit <= 0:
+        tasks = _limit_to_one_feature(tasks)
     if limit <= 0 or limit >= len(tasks):
         return tasks
     return tasks[:limit]

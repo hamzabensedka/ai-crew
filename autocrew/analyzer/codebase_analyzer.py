@@ -17,18 +17,16 @@ from autocrew.analyzer.project_model import (
     TechStack,
 )
 
-SKIP_DIRS = {
-    ".git",
-    "node_modules",
-    "__pycache__",
-    "dist",
-    "build",
+from autocrew.context.path_filter import EXCLUDED_DIRS, is_scannable_path
+
+SKIP_DIRS = EXCLUDED_DIRS | {
     ".next",
-    "venv",
-    ".venv",
     ".mypy_cache",
     ".pytest_cache",
     "output",
+    "__pycache__",
+    "venv",
+    ".venv",
 }
 
 INCLUDE_EXTENSIONS = {
@@ -127,7 +125,8 @@ def _build_file_map(folder_path: str) -> list[str]:
                 continue
             suffix = full.suffix.lower()
             if suffix in INCLUDE_EXTENSIONS or filename in KEY_FILES:
-                file_map.append(relative)
+                if is_scannable_path(relative, folder_path):
+                    file_map.append(relative)
 
     return sorted(file_map)
 

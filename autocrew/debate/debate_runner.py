@@ -14,9 +14,18 @@ from rich.console import Console
 from autocrew.analyzer.llm_client import LLMClient, call_with_json_retry
 from autocrew.analyzer.project_model import ProjectContext
 from autocrew.config import settings
-from autocrew.debate.convergence import diff_rounds, log_early_exit_event, should_early_exit
-from autocrew.debate.critique_context import FULL_CONTEXT_ROLES, build_critique_context
-from autocrew.debate.debate_tiers import build_debate_tiers, is_parallel_tier
+from autocrew.debate.convergence import (
+    ConvergenceTracker,
+    diff_rounds,
+    log_early_exit_event,
+)
+from autocrew.debate.critique_context import build_critique_context
+from autocrew.debate.debate_tiers import (
+    build_core_debate_tiers,
+    get_code_reviewer,
+    get_consultant_agents,
+    is_parallel_tier,
+)
 from autocrew.debate.critique_schema import (
     STRUCTURED_CRITIQUE_PROMPT_SCHEMA,
     attach_structured_fields,
@@ -24,7 +33,7 @@ from autocrew.debate.critique_schema import (
 )
 from autocrew.debate.debate_model import AgentCritique, DebateResult, DebateRound
 from autocrew.debate.heuristic_critique import generate_heuristic_critique
-from autocrew.debate.model_router import DualModelRouter
+from autocrew.debate.model_router import DualModelRouter, ModelRouter
 from autocrew.debate.tracker_critique import generate_tracker_critique
 from autocrew.metrics import begin_session, end_session
 from autocrew.metrics.instrumentation import instrument_llm_call, record_non_llm_agent_call
@@ -61,6 +70,53 @@ LEGACY_CRITIQUE_SCHEMA = """Return JSON:
   "approved": true or false,
   "concerns": ["things wrong or missing"],
   "suggestions": ["improvements to add"],
+  "blockers": ["must-fix before implementation"]
+}}
+
+Return only valid JSON.
+"""
+
+CONSULTANT_PROMPT = """You are {agent_name}, a {agent_role} on the {project_name} project.
+
+Your goal: {goal}
+Your expertise: {backstory}
+
+Current plan:
+\"\"\"
+{plan_text}
+\"\"\"
+
+Project gaps:
+- Missing parts: {missing_parts}
+- Not started features: {not_started}
+
+Provide exactly ONE message with your key constraints, risks, or requirements for this plan.
+Do NOT debate or respond to other agents — this is a one-shot input before the core debate.
+
+Return JSON:
+{{
+  "constraints": ["your key constraint or requirement"],
+  "risks": ["main risk from your role's perspective"],
+  "requirements": ["must-have for your domain"]
+}}
+
+Return only valid JSON.
+"""
+
+PLAN_REVIEW_PROMPT = """You are {agent_name}, a {agent_role} on the {project_name} project.
+
+Review the finalized plan below. You are NOT participating in debate — this is a single post-plan review.
+
+Plan:
+\"\"\"
+{plan_text}
+\"\"\"
+
+Return JSON:
+{{
+  "approved": true or false,
+  "concerns": ["issues in the plan"],
+  "suggestions": ["improvements"],
   "blockers": ["must-fix before implementation"]
 }}
 
@@ -151,6 +207,17 @@ def _format_other_critiques(
     return "\n".join(lines) if lines else "(none yet)"
 
 
+def _format_consultant_context(consultant_critiques: list[AgentCritique]) -> str:
+    if not consultant_critiques:
+        return "(no consultant input)"
+    lines: list[str] = []
+    for c in consultant_critiques:
+        items = c.blockers + c.concerns + c.suggestions
+        if items:
+            lines.append(f"[Consultant {c.agent_name} ({c.agent_role})]: " + "; ".join(items[:5]))
+    return "\n".join(lines) if lines else "(no consultant input)"
+
+
 def _context_critiques_for_agent(
     agent: AgentConfig,
     *,
@@ -159,16 +226,8 @@ def _context_critiques_for_agent(
     previous_tier_critiques: list[AgentCritique],
     parallel_tiers_enabled: bool,
 ) -> tuple[list[AgentCritique], int]:
-    """Choose prior critiques visible to this agent (tier vs sequential rules)."""
-    if not parallel_tiers_enabled:
-        return round_critiques, len(round_critiques)
-
-    if agent.role.value in FULL_CONTEXT_ROLES:
-        return list(round_critiques), len(round_critiques)
-
-    if is_parallel_tier(tier):
-        return list(previous_tier_critiques), len(previous_tier_critiques)
-
+    """Choose prior critiques visible to this agent (sequential core debater rules)."""
+    _ = parallel_tiers_enabled, tier
     return list(previous_tier_critiques), len(previous_tier_critiques)
 
 
@@ -183,8 +242,9 @@ def _generate_critique_for_agent(
     receiver_index: int,
     llm: LLMClient | None,
     llm_call: Callable[[str], str] | None,
-    dual_router: DualModelRouter | None,
+    dual_router: ModelRouter | None,
     slot_label: str,
+    consultant_critiques: list[AgentCritique] | None = None,
 ) -> AgentCritique:
     if (
         agent.role == AgentRole.PROGRESS_TRACKER
@@ -226,6 +286,7 @@ def _generate_critique_for_agent(
             ),
             model_used=model_name,
             receiver_index=receiver_index,
+            consultant_critiques=consultant_critiques,
         )
 
     if llm_call is not None:
@@ -244,6 +305,7 @@ def _generate_critique_for_agent(
                 round_number=round_number,
             ),
             receiver_index=receiver_index,
+            consultant_critiques=consultant_critiques,
         )
 
     if llm is not None:
@@ -262,6 +324,7 @@ def _generate_critique_for_agent(
                 round_number=round_number,
             ),
             receiver_index=receiver_index,
+            consultant_critiques=consultant_critiques,
         )
 
     return generate_heuristic_critique(agent, context, plan_text, round_number)
@@ -270,6 +333,152 @@ def _generate_critique_for_agent(
 def _sort_critiques_by_tier(critiques: list[AgentCritique], tier: list[AgentConfig]) -> list[AgentCritique]:
     order = {agent.role.value: index for index, agent in enumerate(tier)}
     return sorted(critiques, key=lambda critique: order.get(critique.agent_role, 999))
+
+
+def _run_consultant_phase(
+    *,
+    squad: Squad,
+    context: ProjectContext,
+    plan_text: str,
+    llm: LLMClient | None,
+    llm_call: Callable[[str], str] | None,
+    router: ModelRouter | None,
+) -> list[AgentCritique]:
+    """One-shot consultant input before core debate."""
+    consultants = get_consultant_agents(squad)
+    if not consultants:
+        return []
+
+    _log_debate("\n[bold cyan]Consultant phase[/bold cyan] (one-shot, no debate rounds)")
+    results: list[AgentCritique] = []
+    not_started = [f.name for f in context.features if f.status == "not_started"]
+
+    for agent in consultants:
+        model_name = ""
+        if router is not None:
+            agent_llm, model_name = router.for_agent(agent)
+            call = _timed_llm_call(
+                agent_llm.complete,
+                model_name=model_name,
+                agent_name=agent.name,
+                agent_role=agent.role.value,
+                round_number=0,
+            )
+        elif llm_call is not None:
+            call = _timed_llm_call(
+                llm_call,
+                model_name="LLM",
+                agent_name=agent.name,
+                agent_role=agent.role.value,
+                round_number=0,
+            )
+        elif llm is not None:
+            call = _timed_llm_call(
+                llm.complete,
+                model_name=getattr(llm, "label", "LLM"),
+                agent_name=agent.name,
+                agent_role=agent.role.value,
+                round_number=0,
+            )
+        else:
+            results.append(generate_heuristic_critique(agent, context, plan_text, 0))
+            continue
+
+        prompt = CONSULTANT_PROMPT.format(
+            agent_name=agent.name,
+            agent_role=agent.role.value,
+            project_name=context.project_name,
+            goal=agent.goal,
+            backstory=agent.backstory,
+            plan_text=plan_text[:8000],
+            missing_parts=context.missing_parts,
+            not_started=not_started,
+        )
+        data = call_with_json_retry(call, prompt)
+        constraints = list(data.get("constraints", []))
+        risks = list(data.get("risks", []))
+        requirements = list(data.get("requirements", []))
+        critique = AgentCritique(
+            agent_role=agent.role.value,
+            agent_name=agent.name,
+            round_number=0,
+            approved=True,
+            concerns=risks,
+            suggestions=requirements,
+            blockers=constraints,
+            model_used=model_name if router else "",
+        )
+        results.append(attach_structured_fields(critique))
+        _log_debate(f"  [green]done[/green] consultant {agent.name}")
+
+    return results
+
+
+def _run_plan_review(
+    *,
+    squad: Squad,
+    context: ProjectContext,
+    plan_text: str,
+    llm: LLMClient | None,
+    llm_call: Callable[[str], str] | None,
+    router: ModelRouter | None,
+) -> AgentCritique | None:
+    """Single post-debate plan review by code_reviewer (not part of debate rounds)."""
+    reviewer = get_code_reviewer(squad)
+    if reviewer is None:
+        return None
+
+    _log_debate("\n[bold cyan]Plan review[/bold cyan] (code_reviewer, post-debate)")
+    model_name = ""
+    if router is not None:
+        agent_llm, model_name = router.for_agent(reviewer)
+        call = _timed_llm_call(
+            agent_llm.complete,
+            model_name=model_name,
+            agent_name=reviewer.name,
+            agent_role=reviewer.role.value,
+            round_number=-1,
+        )
+    elif llm_call is not None:
+        call = _timed_llm_call(
+            llm_call,
+            model_name="LLM",
+            agent_name=reviewer.name,
+            agent_role=reviewer.role.value,
+            round_number=-1,
+        )
+    elif llm is not None:
+        call = _timed_llm_call(
+            llm.complete,
+            model_name=getattr(llm, "label", "LLM"),
+            agent_name=reviewer.name,
+            agent_role=reviewer.role.value,
+            round_number=-1,
+        )
+    else:
+        return generate_heuristic_critique(reviewer, context, plan_text, -1)
+
+    prompt = PLAN_REVIEW_PROMPT.format(
+        agent_name=reviewer.name,
+        agent_role=reviewer.role.value,
+        project_name=context.project_name,
+        plan_text=plan_text[:8000],
+    )
+    data = call_with_json_retry(call, prompt)
+    if settings.debate_structured_critiques:
+        return parse_critique_response(data, reviewer, -1, model_used=model_name if router else "")
+    return attach_structured_fields(
+        AgentCritique(
+            agent_role=reviewer.role.value,
+            agent_name=reviewer.name,
+            round_number=-1,
+            approved=bool(data.get("approved", False)),
+            concerns=list(data.get("concerns", [])),
+            suggestions=list(data.get("suggestions", [])),
+            blockers=list(data.get("blockers", [])),
+            model_used=model_name if router else "",
+        )
+    )
 
 
 def _run_debate_round(
@@ -281,20 +490,19 @@ def _run_debate_round(
     plan_text: str,
     llm: LLMClient | None,
     llm_call: Callable[[str], str] | None,
-    dual_router: DualModelRouter | None,
+    dual_router: ModelRouter | None,
+    consultant_critiques: list[AgentCritique] | None = None,
 ) -> list[AgentCritique]:
     round_critiques: list[AgentCritique] = []
-    previous_tier_critiques: list[AgentCritique] = []
-    parallel_enabled = settings.debate_parallel_tiers
-    tiers = build_debate_tiers(squad) if parallel_enabled else [[agent] for agent in squad.agents]
+    previous_tier_critiques: list[AgentCritique] = list(consultant_critiques or [])
+    parallel_enabled = False
+    tiers = build_core_debate_tiers(squad)
 
-    _log_debate(f"\n[bold cyan]Round {round_num}/{max_rounds}[/bold cyan]")
-    if parallel_enabled:
-        parallel_tier_count = sum(1 for tier in tiers if is_parallel_tier(tier))
-        if parallel_tier_count:
-            _log_debate(
-                f"[dim]Parallel tiers enabled — {parallel_tier_count} multi-agent tier(s)[/dim]"
-            )
+    _log_debate(f"\n[bold cyan]Round {round_num}/{max_rounds}[/bold cyan] (core debaters)")
+    if consultant_critiques and round_num == 1:
+        _log_debate(
+            f"[dim]Consultant context injected ({len(consultant_critiques)} one-shot inputs)[/dim]"
+        )
 
     agent_counter = 0
     for tier in tiers:
@@ -325,6 +533,7 @@ def _run_debate_round(
                     llm_call=llm_call,
                     dual_router=dual_router,
                     slot_label=tier_label,
+                    consultant_critiques=consultant_critiques,
                 )
 
             with ThreadPoolExecutor(max_workers=len(tier)) as pool:
@@ -359,7 +568,8 @@ def _run_debate_round(
                     llm=llm,
                     llm_call=llm_call,
                     dual_router=dual_router,
-                    slot_label=f"[{agent_counter}/{len(squad.agents)}]",
+                    slot_label=f"[{agent_counter}/{len(tiers)}]",
+                    consultant_critiques=consultant_critiques,
                 )
                 status = "approved" if critique.approved else f"{len(critique.blockers)} blocker(s)"
                 _log_debate(f"  [green]done[/green] — {status}")
@@ -380,6 +590,7 @@ def _llm_critique(
     llm_call: Callable[[str], str],
     model_used: str = "",
     receiver_index: int | None = None,
+    consultant_critiques: list[AgentCritique] | None = None,
 ) -> AgentCritique:
     not_started = [f.name for f in context.features if f.status == "not_started"]
     partial = [f.name for f in context.features if f.status == "partial"]
@@ -407,6 +618,12 @@ def _llm_critique(
             agent.role.value,
             agent.role.value,
             receiver_index,
+        )
+        + (
+            f"\n\nConsultant inputs (one-shot, pre-debate):\n"
+            f"{_format_consultant_context(consultant_critiques or [])}"
+            if round_number == 1 and consultant_critiques
+            else ""
         ),
         schema_instructions=schema_instructions,
     )
@@ -568,12 +785,15 @@ def run_debate(
     max_rounds: int = 3,
     llm: LLMClient | None = None,
     llm_call: Callable[[str], str] | None = None,
-    dual_router: DualModelRouter | None = None,
+    dual_router: ModelRouter | None = None,
 ) -> DebateResult:
+    from autocrew.analyzer.provider_tracker import begin_provider_session, end_provider_session, log_provider_summary
+
     debate_dir = Path(output_dir) / "debate" / _slug(context.project_name)
     debate_dir.mkdir(parents=True, exist_ok=True)
 
     begin_session(context.project_name, phase="debate")
+    begin_provider_session()
     plan_text = load_plan_text(project_root, context)
     rounds: list[DebateRound] = []
     all_action_items: list[str] = []
@@ -581,12 +801,30 @@ def run_debate(
     converged_early = False
     early_exit_round: int | None = None
     early_exit_log_path = debate_dir / "early_exit_log.jsonl"
+    convergence_tracker = ConvergenceTracker()
     models_used: dict[str, str] = {}
     if dual_router:
-        models_used = {
-            "planning": dual_router.planning_model,
-            "implementation": dual_router.implementation_model,
-        }
+        if hasattr(dual_router, "models_used"):
+            models_used = dual_router.models_used()
+        else:
+            models_used = {
+                "planning": dual_router.planning_model,
+                "implementation": dual_router.implementation_model,
+            }
+
+    consultant_critiques = _run_consultant_phase(
+        squad=squad,
+        context=context,
+        plan_text=plan_text,
+        llm=llm,
+        llm_call=llm_call,
+        router=dual_router,
+    )
+    if consultant_critiques:
+        (debate_dir / "consultant_inputs.json").write_text(
+            json.dumps([c.to_dict() for c in consultant_critiques], indent=2),
+            encoding="utf-8",
+        )
 
     for round_num in range(1, max_rounds + 1):
         round_critiques = _run_debate_round(
@@ -598,6 +836,7 @@ def run_debate(
             llm=llm,
             llm_call=llm_call,
             dual_router=dual_router,
+            consultant_critiques=consultant_critiques if round_num == 1 else None,
         )
 
         total_blockers = sum(len(c.blockers) for c in round_critiques)
@@ -639,10 +878,11 @@ def run_debate(
                 previous_round=rounds[-1].round_number,
                 current_round=round_num,
             )
-            if should_early_exit(
-                convergence,
+            convergence_tracker.update(convergence)
+            if convergence_tracker.should_exit(
                 round_number=round_num,
                 min_rounds=settings.debate_min_rounds,
+                stable_rounds_required=settings.debate_stable_rounds_required,
             ):
                 converged_early = True
                 consensus_reached = True
@@ -656,8 +896,8 @@ def run_debate(
                     diff=convergence,
                 )
                 _log_debate(
-                    f"[yellow]Early exit[/yellow] — round {round_num} raised no new concerns "
-                    f"or open questions (logged to {early_exit_log_path.name})"
+                    f"[yellow]Early exit[/yellow] — {settings.debate_stable_rounds_required} "
+                    f"consecutive rounds with no meaningful change (round {round_num})"
                 )
                 rounds.append(round_data)
                 (round_dir / "critiques.json").write_text(
@@ -684,6 +924,20 @@ def run_debate(
             break
 
     timestamp = datetime.now(timezone.utc).isoformat()
+    plan_review = _run_plan_review(
+        squad=squad,
+        context=context,
+        plan_text=plan_text,
+        llm=llm,
+        llm_call=llm_call,
+        router=dual_router,
+    )
+    if plan_review is not None:
+        (debate_dir / "plan_review.json").write_text(
+            json.dumps(plan_review.to_dict(), indent=2),
+            encoding="utf-8",
+        )
+
     final_plan_path = debate_dir / "final_plan.md"
     final_plan_path.write_text(plan_text, encoding="utf-8")
 
@@ -719,6 +973,8 @@ def run_debate(
     elif not product_doc.is_file():
         product_doc.write_text(plan_text, encoding="utf-8")
 
+    log_provider_summary()
+    provider_stats = end_provider_session()
     end_session(
         phase="debate",
         debate_rounds=len(rounds),
@@ -727,7 +983,7 @@ def run_debate(
             "converged_early": converged_early,
             "early_exit_round": early_exit_round,
             "debate_dir": str(debate_dir),
-            "debate_parallel_tiers": settings.debate_parallel_tiers,
+            "provider_stats": provider_stats.to_dict() if provider_stats else {},
         },
     )
 

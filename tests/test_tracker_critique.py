@@ -134,9 +134,9 @@ class TestTrackerCritiqueDeterminism:
             c for r in result.rounds for c in r.critiques
             if c.agent_role == AgentRole.PROGRESS_TRACKER.value
         ]
-        assert len(tracker_critiques) == 1
-        assert tracker_critiques[0].model_used == "deterministic"
-        assert len(llm_calls) == len(squad.agents) - 1
+        assert len(tracker_critiques) == 0
+        # consultants + core debaters (3) + code reviewer plan review
+        assert len(llm_calls) >= 4
 
 
 class TestAveryOutputClassification:

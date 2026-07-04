@@ -1,6 +1,7 @@
 ﻿"""Route debate/build agents to different LLM models.
 
-Supports two routing modes:
+Supports routing modes:
+- RoleModelRouter: free-tier chain per role tier (reasoning / coder / reviewer)
 - DualModelRouter: 2 groups (planning vs implementation)
 - PerAgentModelRouter: a unique model per agent role (10 models max)
 """
@@ -8,11 +9,22 @@ Supports two routing modes:
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Protocol
 
 from autocrew.analyzer.llm_client import LLMClient
+from autocrew.analyzer.litellm_chain import LiteLLMFallbackClient, create_chain_client_for_tier
+from autocrew.analyzer.model_registry import (
+    model_tier_for_role,
+    nim_model_for_tier,
+)
 from autocrew.squad.squad_model import AgentConfig, AgentRole
 from autocrew.tasks.task_model import TaskConfig
+
+
+class ModelRouter(Protocol):
+    def for_agent(self, agent: AgentConfig) -> tuple[LLMClient, str]: ...
+
+    def for_build_task(self, agent: AgentConfig, task: TaskConfig) -> tuple[LLMClient, str]: ...
 
 # Heavy doc/code generation tasks — use implementation model even for planning roles
 BUILD_IMPLEMENTATION_TASKS = frozenset({"arch_design", "po_product_spec"})
@@ -138,6 +150,58 @@ class PerAgentModelRouter:
                 result[key] = self.role_model_map[key][1]
             else:
                 result[key] = self.default_model
+        return result
+
+
+class RoleModelRouter:
+    """Route each agent role to a model tier with NIM→Groq→Cerebras→OpenRouter fallback."""
+
+    def __init__(self) -> None:
+        self._clients: dict[str, LiteLLMFallbackClient] = {}
+        self._models: dict[str, str] = {}
+
+    def _client_for_tier(self, tier: str) -> LiteLLMFallbackClient:
+        if tier not in self._clients:
+            self._clients[tier] = create_chain_client_for_tier(tier)
+            self._models[tier] = nim_model_for_tier(tier)
+        return self._clients[tier]
+
+    def for_agent(self, agent: AgentConfig) -> tuple[LLMClient, str]:
+        tier = model_tier_for_role(agent.role)
+        if tier is None:
+            raise ValueError(f"No LLM model for role {agent.role.value}")
+        client = self._client_for_tier(tier)
+        return client, self._models[tier]
+
+    def for_build_task(self, agent: AgentConfig, task: TaskConfig) -> tuple[LLMClient, str]:
+        if task.task_id in BUILD_IMPLEMENTATION_TASKS:
+            client = self._client_for_tier("coder")
+            return client, self._models.get("coder", nim_model_for_tier("coder"))
+        return self.for_agent(agent)
+
+    @property
+    def planning_model(self) -> str:
+        return self._models.get("reasoning", nim_model_for_tier("reasoning"))
+
+    @property
+    def implementation_model(self) -> str:
+        return self._models.get("coder", nim_model_for_tier("coder"))
+
+    def summary(self) -> str:
+        lines = ["Role-based model routing (NIM primary, Groq/Cerebras/OpenRouter fallback):"]
+        for tier in ("reasoning", "coder", "reviewer"):
+            if tier in self._models:
+                lines.append(f"  {tier} -> {self._models[tier]}")
+        return "\n".join(lines)
+
+    def models_used(self) -> dict[str, str]:
+        result: dict[str, str] = {}
+        for role in AgentRole:
+            tier = model_tier_for_role(role)
+            if tier is None:
+                result[role.value] = "deterministic"
+            else:
+                result[role.value] = self._models.get(tier, nim_model_for_tier(tier))
         return result
 
 

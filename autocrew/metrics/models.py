@@ -22,6 +22,9 @@ class AgentCallRecord:
     wall_clock_end: str
     task_id: str | None = None
     project_name: str = ""
+    provider_used: str = ""
+    is_paid_fallback: bool = False
+    rate_limit_wait_ms: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

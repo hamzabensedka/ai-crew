@@ -55,87 +55,24 @@ def _full_squad_context() -> ProjectContext:
     )
 
 
-class TestDevOrderRandomization:
-    def test_default_order_is_deterministic(self):
+class TestCoreDebateTiers:
+    def test_core_debate_order_is_po_architect_devops(self):
         squad = build_squad(_full_squad_context())
-        tiers = build_debate_tiers(squad, randomize_dev_order=False)
-        dev_order = get_dev_tier_order(tiers)
-        # Should always be in DEV_ROLES order
-        assert dev_order[0] == AgentRole.BACKEND_DEV
-        assert dev_order[1] == AgentRole.FRONTEND_DEV
+        tiers = build_debate_tiers(squad)
+        roles = [tier[0].role for tier in tiers]
+        assert roles == [AgentRole.PRODUCT_OWNER, AgentRole.ARCHITECT, AgentRole.DEVOPS]
 
-    def test_randomized_order_changes_with_seed(self):
+    def test_no_parallel_dev_tier_in_new_structure(self):
         squad = build_squad(_full_squad_context())
-        default_tiers = build_debate_tiers(squad, randomize_dev_order=False)
-        randomized_tiers = build_debate_tiers(squad, randomize_dev_order=True, seed=42)
-        default_order = get_dev_tier_order(default_tiers)
-        randomized_order = get_dev_tier_order(randomized_tiers)
-        assert default_order != randomized_order
-
-    def test_same_seed_produces_same_order(self):
-        squad = build_squad(_full_squad_context())
-        tiers1 = build_debate_tiers(squad, randomize_dev_order=True, seed=99)
-        tiers2 = build_debate_tiers(squad, randomize_dev_order=True, seed=99)
-        assert get_dev_tier_order(tiers1) == get_dev_tier_order(tiers2)
-
-    def test_different_seeds_produce_different_orders(self):
-        squad = build_squad(_full_squad_context())
-        # Try multiple seed pairs — with 3 dev roles, most seed pairs will differ
-        found_difference = False
-        for seed_a, seed_b in [(1, 2), (1, 100), (42, 99), (7, 13), (3, 77)]:
-            tiers1 = build_debate_tiers(squad, randomize_dev_order=True, seed=seed_a)
-            tiers2 = build_debate_tiers(squad, randomize_dev_order=True, seed=seed_b)
-            if get_dev_tier_order(tiers1) != get_dev_tier_order(tiers2):
-                found_difference = True
-                break
-        assert found_difference, "All tested seed pairs produced the same order"
+        tiers = build_debate_tiers(squad, randomize_dev_order=True, seed=42)
+        assert get_dev_tier_order(tiers) == []
 
     def test_po_and_architect_always_fixed(self):
         squad = build_squad(_full_squad_context())
         tiers = build_debate_tiers(squad, randomize_dev_order=True, seed=42)
         assert tiers[0][0].role == AgentRole.PRODUCT_OWNER
         assert tiers[1][0].role == AgentRole.ARCHITECT
-
-    def test_tail_always_fixed(self):
-        squad = build_squad(_full_squad_context())
-        tiers = build_debate_tiers(squad, randomize_dev_order=True, seed=42)
-        assert tiers[-1][0].role == AgentRole.PROGRESS_TRACKER
-        assert tiers[-2][0].role == AgentRole.CODE_REVIEWER
-        assert tiers[-3][0].role == AgentRole.TESTER
-
-    def test_randomize_with_single_dev_role_no_change(self):
-        """When only one dev role exists, randomization has no effect."""
-        context = ProjectContext(
-            project_type=ProjectType.EXISTING_CODE,
-            project_name="Single Dev",
-            domain=ProjectDomain.API,
-            description="API only",
-            tech_stack=TechStack(backend=["FastAPI"]),
-            features=[
-                FeatureItem(name="Auth", description="JWT", status="not_started", priority="high"),
-            ],
-            missing_parts=["auth"],
-            codebase_path=".",
-        )
-        squad = build_squad(context)
-        default_tiers = build_debate_tiers(squad, randomize_dev_order=False)
-        randomized_tiers = build_debate_tiers(squad, randomize_dev_order=True, seed=42)
-        assert get_dev_tier_order(default_tiers) == get_dev_tier_order(randomized_tiers)
-
-    def test_config_flag_controls_randomization(self, monkeypatch):
-        squad = build_squad(_full_squad_context())
-        monkeypatch.setattr(settings, "debate_randomize_dev_order", True)
-        tiers = build_debate_tiers(squad, seed=42)
-        default_tiers = build_debate_tiers(squad, randomize_dev_order=False)
-        assert get_dev_tier_order(tiers) != get_dev_tier_order(default_tiers)
-
-    def test_explicit_param_overrides_config_flag(self, monkeypatch):
-        squad = build_squad(_full_squad_context())
-        monkeypatch.setattr(settings, "debate_randomize_dev_order", True)
-        # Explicit False should override the config flag
-        tiers = build_debate_tiers(squad, randomize_dev_order=False)
-        default_tiers = build_debate_tiers(squad, randomize_dev_order=False)
-        assert get_dev_tier_order(tiers) == get_dev_tier_order(default_tiers)
+        assert tiers[2][0].role == AgentRole.DEVOPS
 
 
 class TestCompareOrderings:

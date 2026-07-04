@@ -15,6 +15,8 @@ from autocrew.metrics import begin_session, end_session
 from autocrew.metrics.instrumentation import instrument_llm_call
 from autocrew.squad.squad_model import AgentConfig
 from autocrew.tasks.task_model import TaskConfig
+from autocrew.context.path_filter import is_scannable_path, iter_source_files
+from autocrew.crew.build_rules import find_pattern_examples
 from autocrew.tools.file_tools import read_file, write_file
 
 
@@ -88,23 +90,12 @@ def _is_doc_task(task: TaskConfig) -> bool:
 
 
 def _list_project_tree(project_root: str, max_entries: int = 40) -> str:
-    from pathlib import Path
-
-    root = Path(project_root)
-    if not root.is_dir():
-        return "(empty project root)"
-    skip = {".git", "node_modules", "__pycache__", ".nx", "dist", "build", ".venv"}
-    lines: list[str] = []
-    for path in sorted(root.rglob("*")):
-        if any(part in skip for part in path.parts):
-            continue
-        if path.is_file():
-            rel = path.relative_to(root).as_posix()
-            lines.append(rel)
-            if len(lines) >= max_entries:
-                lines.append("...")
-                break
-    return "\n".join(lines) if lines else "(no files yet)"
+    lines = iter_source_files(project_root, max_entries=max_entries)
+    if not lines:
+        return "(no source files yet)"
+    if len(lines) >= max_entries:
+        lines.append("...")
+    return "\n".join(lines)
 
 
 def _parse_files_payload(data: dict, task: TaskConfig) -> list[dict[str, str]]:
@@ -177,6 +168,20 @@ def execute_task_with_llm(
             write_scopes=", ".join(agent.can_write_to),
         )
         prompt += f"\n\nExisting project files (sample):\n{tree}\n"
+        patterns = find_pattern_examples(project_root, task, max_files=2)
+        if patterns:
+            prompt += "\nPattern examples (follow these conventions):\n"
+            for pattern_path in patterns:
+                try:
+                    content = read_file(
+                        pattern_path,
+                        project_root,
+                        agent.can_read,
+                        enforce_scope=settings.enforce_scope,
+                    )
+                    prompt += f"\n--- Pattern: {pattern_path} ---\n{content[:4000]}\n"
+                except (OSError, LLMError):
+                    prompt += f"\n--- Pattern: {pattern_path} (unreadable) ---\n"
 
     model_label = model_name.split("/")[-1] if model_name else "LLM"
     logger.log(f"Calling {model_label} for task '{task.title}'")

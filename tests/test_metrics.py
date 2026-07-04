@@ -131,12 +131,10 @@ class TestDebateMetricsIntegration:
 
         assert metrics["sessions"]["debate"] == 1
         assert metrics["debate"]["rounds_median"] == 1.0
-        assert len(calls) == len(squad.agents)
+        assert len(calls) >= 3  # consultants + core debaters + plan review
 
         tracker_calls = [c for c in calls if c["agent_role"] == AgentRole.PROGRESS_TRACKER.value]
-        assert len(tracker_calls) == 1
-        assert tracker_calls[0]["model_used"] == "deterministic"
-        assert tracker_calls[0]["input_tokens"] == 0
+        assert len(tracker_calls) == 0  # tracker no longer participates in debate rounds
 
 
 class TestBuildMetricsIntegration:

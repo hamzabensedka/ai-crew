@@ -129,11 +129,20 @@ class TestConvergenceDiff:
         assert len(concerns) == 1
         assert concerns[0].item_id == "c1"
 
-    def test_should_early_exit_respects_min_rounds(self):
+    def test_should_early_exit_respects_min_rounds_and_stable_count(self):
         diff = diff_rounds([], [], previous_round=1, current_round=2)
-        assert not should_early_exit(diff, round_number=1, min_rounds=1)
-        assert should_early_exit(diff, round_number=2, min_rounds=1)
-        assert not should_early_exit(diff, round_number=2, min_rounds=3)
+        assert not should_early_exit(
+            diff, round_number=1, min_rounds=1, consecutive_stable_rounds=2, stable_rounds_required=2
+        )
+        assert not should_early_exit(
+            diff, round_number=2, min_rounds=1, consecutive_stable_rounds=1, stable_rounds_required=2
+        )
+        assert should_early_exit(
+            diff, round_number=2, min_rounds=1, consecutive_stable_rounds=2, stable_rounds_required=2
+        )
+        assert not should_early_exit(
+            diff, round_number=2, min_rounds=3, consecutive_stable_rounds=2, stable_rounds_required=2
+        )
 
 
 class TestDebateEarlyExitIntegration:
@@ -142,6 +151,7 @@ class TestDebateEarlyExitIntegration:
     ):
         monkeypatch.setattr(settings, "debate_early_exit", True)
         monkeypatch.setattr(settings, "debate_min_rounds", 1)
+        monkeypatch.setattr(settings, "debate_stable_rounds_required", 2)
         monkeypatch.setattr(settings, "debate_deterministic_tracker", True)
         monkeypatch.setattr(settings, "debate_structured_critiques", True)
 
@@ -156,7 +166,9 @@ class TestDebateEarlyExitIntegration:
 
         def fake_llm(prompt: str) -> str:
             call_counts["n"] += 1
-            if call_counts["n"] <= len(squad.agents):
+            if "constraints" in prompt:
+                return json.dumps({"constraints": [], "risks": [], "requirements": []})
+            if call_counts["n"] <= 3:
                 return json.dumps({
                     "approved": False,
                     "concerns": [
@@ -169,7 +181,7 @@ class TestDebateEarlyExitIntegration:
                     ],
                     "decisions": [],
                     "open_questions": [],
-                    "blockers": [],
+                    "blockers": [{"id": "b1", "severity": "high", "text": "Payment spec missing", "targets": []}],
                 })
             return json.dumps({
                 "approved": False,
@@ -183,7 +195,7 @@ class TestDebateEarlyExitIntegration:
                 ],
                 "decisions": [],
                 "open_questions": [],
-                "blockers": [],
+                "blockers": [{"id": "b1", "severity": "high", "text": "Payment spec missing", "targets": []}],
             })
 
         result = run_debate(
@@ -196,13 +208,13 @@ class TestDebateEarlyExitIntegration:
         )
 
         assert result.converged_early
-        assert result.early_exit_round == 2
-        assert len(result.rounds) == 2
+        assert result.early_exit_round == 3
+        assert len(result.rounds) == 3
         assert Path(result.early_exit_log_path).is_file()
         log_lines = Path(result.early_exit_log_path).read_text(encoding="utf-8").strip().splitlines()
         event = json.loads(log_lines[-1])
         assert event["event"] == "debate_early_exit"
-        assert event["round_number"] == 2
+        assert event["round_number"] == 3
         assert event["task_id"]
 
     def test_min_rounds_prevents_exit_until_threshold(

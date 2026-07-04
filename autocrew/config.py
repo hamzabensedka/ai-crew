@@ -9,9 +9,12 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     openai_api_key: str = ""
     nvidia_api_key: str = ""
+    groq_api_key: str = ""
+    cerebras_api_key: str = ""
     zenmux_api_key: str = ""
     openrouter_api_key: str = ""
     llm_provider: str = "auto"  # auto | anthropic | openai | nvidia | zenmux | openrouter
+    llm_free_tier_chain: bool = True  # NIM → Groq → Cerebras → OpenRouter per role
     default_llm: str = "deepseek-ai/deepseek-v4-pro"
     fallback_llm: str = "moonshotai/kimi-k2.6"
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
@@ -53,6 +56,17 @@ class Settings(BaseSettings):
     # e.g. {"product_owner":"claude-3-5-sonnet-20241022","backend_developer":"deepseek-ai/deepseek-v4-pro"}
     debate_per_agent_models: str = ""
 
+    # Provider safety limits (paid OpenRouter fallback)
+    openrouter_fallback_ratio_limit: float = 0.20
+    openrouter_daily_spend_cap_eur: float = 10.0
+
+    # Early exit: stop after N consecutive rounds with no meaningful change
+    debate_stable_rounds_required: int = 2
+
+    # Build: one feature task at a time; skip debate when pattern exists
+    build_one_feature_at_a_time: bool = True
+    build_skip_debate_if_pattern_exists: bool = True
+
     output_dir: str = "./output"
     squads_dir: str = "./output/squads"
     reports_dir: str = "./output/reports"
@@ -77,9 +91,25 @@ class Settings(BaseSettings):
             self.anthropic_api_key.strip()
             or self.openai_api_key.strip()
             or self.nvidia_api_key.strip()
+            or self.groq_api_key.strip()
+            or self.cerebras_api_key.strip()
             or self.zenmux_api_key.strip()
             or self.openrouter_api_key.strip()
         )
+
+    def sync_provider_env(self) -> None:
+        """Push API keys into os.environ for LiteLLM provider chain."""
+        import os
+
+        mapping = {
+            "NVIDIA_API_KEY": self.nvidia_api_key,
+            "GROQ_API_KEY": self.groq_api_key,
+            "CEREBRAS_API_KEY": self.cerebras_api_key,
+            "OPENROUTER_API_KEY": self.openrouter_api_key,
+        }
+        for env_key, value in mapping.items():
+            if value.strip() and not os.environ.get(env_key, "").strip():
+                os.environ[env_key] = value.strip()
 
     def ensure_dirs(self) -> None:
         for path in (
