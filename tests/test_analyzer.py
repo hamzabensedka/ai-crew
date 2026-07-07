@@ -7,6 +7,7 @@ from autocrew.analyzer.llm_client import (
     ResilientLLMClient,
     call_with_json_retry,
     extract_json,
+    extract_message_text,
     is_retryable_error,
 )
 from autocrew.analyzer.idea_analyzer import analyze_idea
@@ -24,6 +25,46 @@ class TestExtractJson:
     def test_invalid_json_raises(self):
         with pytest.raises(LLMError):
             extract_json("not json")
+
+
+class TestExtractMessageText:
+    def test_prefers_content(self):
+        class Message:
+            content = "hello"
+            reasoning = "ignored"
+
+        assert extract_message_text(Message()) == "hello"
+
+    def test_uses_reasoning_when_content_empty(self):
+        class Message:
+            content = None
+            reasoning = "thinking output"
+
+        assert extract_message_text(Message()) == "thinking output"
+
+    def test_uses_reasoning_content(self):
+        class Message:
+            content = ""
+            reasoning_content = "legacy reasoning"
+
+        assert extract_message_text(Message()) == "legacy reasoning"
+
+    def test_uses_reasoning_details(self):
+        class Message:
+            content = None
+            reasoning = None
+            reasoning_details = [{"type": "reasoning.text", "text": "detail text"}]
+
+        assert extract_message_text(Message()) == "detail text"
+
+    def test_content_parts_list(self):
+        class Part:
+            text = "part-a"
+
+        class Message:
+            content = [Part(), {"type": "text", "text": "part-b"}]
+
+        assert extract_message_text(Message()) == "part-apart-b"
 
 
 class TestJsonRetry:
@@ -242,6 +283,41 @@ class TestNvidiaClient:
 
         s = Settings(nvidia_api_key="nvapi-test")
         assert s.has_api_keys()
+
+
+    def test_openrouter_reasoning_field(self, monkeypatch):
+        from autocrew.analyzer.llm_client import OpenRouterClient
+
+        class FakeMessage:
+            content = None
+            reasoning = '{"content": "# Spec\\n\\nBody", "summary": "done"}'
+            reasoning_content = None
+
+        class FakeChoice:
+            message = FakeMessage()
+            finish_reason = "stop"
+
+        class FakeResponse:
+            choices = [FakeChoice()]
+            usage = None
+
+        class FakeCompletions:
+            def create(self, **kwargs):
+                assert kwargs["model"] == "tencent/hy3:free"
+                return FakeResponse()
+
+        class FakeChat:
+            completions = FakeCompletions()
+
+        class FakeOpenAI:
+            def __init__(self, **kwargs):
+                self.chat = FakeChat()
+
+        monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
+
+        client = OpenRouterClient("or-test", "tencent/hy3:free")
+        result = client.complete("Write JSON")
+        assert "Spec" in result
 
 
 class TestZenMuxClient:

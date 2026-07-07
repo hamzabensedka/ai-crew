@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from autocrew.analyzer.llm_client import LLMError
+from autocrew.analyzer.llm_client import LLMError, extract_message_text
 from autocrew.analyzer.model_registry import ModelTier, cerebras_model_for_tier, groq_model_for_tier, nim_model_for_tier, openrouter_model_for_tier
 from autocrew.analyzer.provider_tracker import (
     PAID_PROVIDER,
@@ -94,15 +94,11 @@ def _litellm_model_id(hop: ProviderHop) -> str:
 
 
 def _extract_content(response: Any) -> str:
-    choice = response.choices[0]
-    message = choice.message
-    content = getattr(message, "content", None) or ""
-    if not content.strip():
-        reasoning = getattr(message, "reasoning_content", None)
-        if reasoning:
-            content = reasoning
-    if not content or not content.strip():
-        raise LLMError("Empty response from provider")
+    content = extract_message_text(response.choices[0].message)
+    if not content:
+        finish_reason = getattr(response.choices[0], "finish_reason", None)
+        detail = f" (finish_reason={finish_reason})" if finish_reason else ""
+        raise LLMError(f"Empty response from provider{detail}")
     return content
 
 

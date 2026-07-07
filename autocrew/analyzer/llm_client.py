@@ -48,6 +48,64 @@ def _backoff_delay(attempt: int, base_seconds: float, cap_seconds: float = 120.0
     return min(base_seconds * (2 ** attempt), cap_seconds)
 
 
+def _text_from_content_part(part: object) -> str:
+    if isinstance(part, dict):
+        if part.get("type") == "text":
+            return str(part.get("text") or "")
+        return str(part.get("text") or part.get("content") or "")
+    text = getattr(part, "text", None)
+    if text:
+        return str(text)
+    content = getattr(part, "content", None)
+    return str(content) if content else ""
+
+
+def _text_from_reasoning_details(details: object) -> str:
+    if not details:
+        return ""
+    parts: list[str] = []
+    for item in details:
+        if isinstance(item, dict):
+            if item.get("type") in {"reasoning.text", "reasoning.summary"} and item.get("text"):
+                parts.append(str(item["text"]))
+            elif item.get("text"):
+                parts.append(str(item["text"]))
+        else:
+            text = getattr(item, "text", None)
+            if text:
+                parts.append(str(text))
+    return "".join(parts).strip()
+
+
+def extract_message_text(message: object) -> str:
+    """Normalize chat message content across OpenAI-compatible providers.
+
+    OpenRouter thinking models (e.g. tencent/hy3:free) often return output in
+    ``reasoning`` or ``reasoning_details`` while ``content`` is empty.
+    """
+    raw = getattr(message, "content", None)
+    content = ""
+    if isinstance(raw, list):
+        content = "".join(_text_from_content_part(part) for part in raw)
+    elif raw is not None:
+        content = str(raw)
+
+    if content.strip():
+        return content.strip()
+
+    for attr in ("reasoning_content", "reasoning"):
+        value = getattr(message, attr, None)
+        if value and str(value).strip():
+            return str(value).strip()
+
+    reasoning_details = getattr(message, "reasoning_details", None)
+    details_text = _text_from_reasoning_details(reasoning_details)
+    if details_text:
+        return details_text
+
+    return ""
+
+
 def extract_json(text: str) -> dict:
     """Extract and parse JSON from LLM response, handling markdown fences."""
     text = text.strip()
@@ -248,11 +306,13 @@ class OpenAICompatibleClient:
             else:
                 self._last_usage = None
             message = response.choices[0].message
-            content = message.content or ""
-            if not content and hasattr(message, "reasoning_content") and message.reasoning_content:
-                content = message.reasoning_content
-            if not content or not content.strip():
-                raise LLMError(f"{self.provider_label} returned empty response")
+            content = extract_message_text(message)
+            if not content:
+                finish_reason = getattr(response.choices[0], "finish_reason", None)
+                raise LLMError(
+                    f"{self.provider_label} returned empty response"
+                    + (f" (finish_reason={finish_reason})" if finish_reason else "")
+                )
             return content
         except LLMError:
             raise
@@ -363,12 +423,12 @@ class NvidiaClient(OpenAICompatibleClient):
                 last_ping = now
         elapsed = time.perf_counter() - start
         content = "".join(content_parts).strip()
+        reasoning = "".join(reasoning_parts).strip()
         if content:
             progress_log(
                 f"Stream complete ({elapsed:.1f}s, {chunk_count} chunks, {len(content):,} chars)"
             )
             return content
-        reasoning = "".join(reasoning_parts).strip()
         if reasoning:
             progress_log(
                 f"Stream complete — using reasoning ({elapsed:.1f}s, {len(reasoning):,} chars)"
@@ -399,10 +459,8 @@ class NvidiaClient(OpenAICompatibleClient):
             response = client.chat.completions.create(**request_kwargs)
             elapsed = time.perf_counter() - start
             message = response.choices[0].message
-            content = message.content or ""
-            if not content and hasattr(message, "reasoning_content") and message.reasoning_content:
-                content = message.reasoning_content
-            if not content or not content.strip():
+            content = extract_message_text(message)
+            if not content:
                 raise LLMError("NVIDIA returned empty response")
             progress_log(
                 f"Response from {self.model} ({elapsed:.1f}s, {len(content):,} chars)",
@@ -613,9 +671,17 @@ def create_llm_client(
             timeout_seconds=timeout,
         )
 
-    def _resilient_pair(primary: LLMClient | None, fallback: LLMClient | None, label: str) -> LLMClient | None:
+    def _resilient_pair(
+        primary: LLMClient | None,
+        fallback: LLMClient | None,
+        label: str,
+        *,
+        fallback_model: str = "",
+    ) -> LLMClient | None:
         if primary is None:
             return None
+        if fallback_model.strip().lower() == default_model.strip().lower():
+            fallback = None
         return _wrap_resilient(
             primary,
             fallback=fallback,
@@ -634,28 +700,28 @@ def create_llm_client(
             or _openai(fallback_model)
             or _anthropic(fallback_model)
         )
-        return _resilient_pair(primary, fallback, default_model) or primary
+        return _resilient_pair(primary, fallback, default_model, fallback_model=fallback_model) or primary
 
     if provider == "nvidia":
         primary = _nvidia(default_model)
         if primary is None:
             raise LLMError("LLM_PROVIDER=nvidia but NVIDIA_API_KEY is not set")
         fallback = _nvidia(fallback_model) or _openai(fallback_model) or _anthropic(fallback_model)
-        return _resilient_pair(primary, fallback, default_model) or primary
+        return _resilient_pair(primary, fallback, default_model, fallback_model=fallback_model) or primary
 
     if provider == "openai":
         primary = _openai(default_model)
         if primary is None:
             raise LLMError("LLM_PROVIDER=openai but OPENAI_API_KEY is not set")
         fallback = _anthropic(fallback_model) or _nvidia(fallback_model)
-        return _resilient_pair(primary, fallback, default_model) or primary
+        return _resilient_pair(primary, fallback, default_model, fallback_model=fallback_model) or primary
 
     if provider == "anthropic":
         primary = _anthropic(default_model)
         if primary is None:
             raise LLMError("LLM_PROVIDER=anthropic but ANTHROPIC_API_KEY is not set")
         fallback = _openai(fallback_model) or _nvidia(fallback_model)
-        return _resilient_pair(primary, fallback, default_model) or primary
+        return _resilient_pair(primary, fallback, default_model, fallback_model=fallback_model) or primary
 
     if provider == "openrouter" or (
         openrouter_key.strip() and _is_openrouter_routed_model(default_model)
@@ -669,7 +735,7 @@ def create_llm_client(
             or _openai(fallback_model)
             or _anthropic(fallback_model)
         )
-        return _resilient_pair(primary, fallback, default_model) or primary
+        return _resilient_pair(primary, fallback, default_model, fallback_model=fallback_model) or primary
 
     if nvidia_key.strip() and (
         _is_nvidia_model(default_model)
@@ -679,7 +745,7 @@ def create_llm_client(
         primary = _nvidia(default_model)
         if primary:
             fallback = _nvidia(fallback_model) or _openrouter(fallback_model) or _openai(fallback_model) or _anthropic(fallback_model)
-            return _resilient_pair(primary, fallback, default_model) or primary
+            return _resilient_pair(primary, fallback, default_model, fallback_model=fallback_model) or primary
 
     if default_model.startswith("claude"):
         primary = _anthropic(default_model)
@@ -690,7 +756,7 @@ def create_llm_client(
 
     if primary is None:
         raise LLMError("No LLM API key configured (Anthropic, OpenAI, NVIDIA, or ZenMux)")
-    return _resilient_pair(primary, fallback, default_model) or primary
+    return _resilient_pair(primary, fallback, default_model, fallback_model=fallback_model) or primary
 
 
 def create_model_client(
