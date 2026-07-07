@@ -509,6 +509,14 @@ def _is_nvidia_model(model: str) -> bool:
     return "/" in model or model.startswith(("deepseek", "moonshotai", "meta", "nvidia"))
 
 
+def _is_openrouter_routed_model(model: str) -> bool:
+    """Models that must use OpenRouter (not available on NIM)."""
+    normalized = model.strip().lower()
+    if ":free" in normalized:
+        return True
+    return normalized.startswith(("tencent/", "anthropic/", "google/", "openai/", "meta-llama/"))
+
+
 def _make_nvidia_client(
     nvidia_key: str,
     model: str,
@@ -649,16 +657,24 @@ def create_llm_client(
         fallback = _openai(fallback_model) or _nvidia(fallback_model)
         return _resilient_pair(primary, fallback, default_model) or primary
 
-    if provider == "openrouter":
+    if provider == "openrouter" or (
+        openrouter_key.strip() and _is_openrouter_routed_model(default_model)
+    ):
         primary = _openrouter(default_model)
         if primary is None:
-            raise LLMError("LLM_PROVIDER=openrouter but OPENROUTER_API_KEY is not set")
-        fallback = _openrouter(fallback_model) or _nvidia(fallback_model) or _openai(fallback_model) or _anthropic(fallback_model)
+            raise LLMError("OpenRouter API key required for OpenRouter-routed models")
+        fallback = (
+            _openrouter(fallback_model)
+            or _nvidia(fallback_model)
+            or _openai(fallback_model)
+            or _anthropic(fallback_model)
+        )
         return _resilient_pair(primary, fallback, default_model) or primary
 
     if nvidia_key.strip() and (
         _is_nvidia_model(default_model)
-        or (not anthropic_key.strip() and not openai_key.strip())
+        and not _is_openrouter_routed_model(default_model)
+        or (not anthropic_key.strip() and not openai_key.strip() and not openrouter_key.strip())
     ):
         primary = _nvidia(default_model)
         if primary:
@@ -713,9 +729,9 @@ def create_model_client(
             max_tokens=nvidia_max_tokens,
             timeout_seconds=timeout,
         )
-    elif provider == "openrouter":
+    elif provider == "openrouter" or (openrouter_key.strip() and _is_openrouter_routed_model(model)):
         if not openrouter_key.strip():
-            raise LLMError("OpenRouter API key required when LLM_PROVIDER=openrouter")
+            raise LLMError("OpenRouter API key required for OpenRouter-routed models")
         client: LLMClient = OpenRouterClient(
             openrouter_key,
             model,
