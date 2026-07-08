@@ -15,8 +15,8 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     llm_provider: str = "auto"  # auto | anthropic | openai | nvidia | zenmux | openrouter
     llm_free_tier_chain: bool = True  # NIM → Groq → Cerebras → OpenRouter per role
-    default_llm: str = "deepseek-ai/deepseek-v4-pro"
-    fallback_llm: str = "moonshotai/kimi-k2.6"
+    default_llm: str = "meta/llama-3.3-70b-instruct"
+    fallback_llm: str = "deepseek-ai/deepseek-v4-pro"
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     zenmux_base_url: str = "https://zenmux.ai/api/v1"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"

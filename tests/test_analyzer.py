@@ -166,6 +166,33 @@ class TestResilience:
         assert calls["fallback"] == 1
 
 
+    def test_model_unavailable_switches_to_fallback(self, monkeypatch):
+        calls = {"primary": 0, "fallback": 0}
+
+        class Primary:
+            def complete(self, prompt: str) -> str:
+                calls["primary"] += 1
+                raise LLMError(
+                    "NVIDIA API error: 404 - Not found for account 'test'"
+                )
+
+        class Fallback:
+            def complete(self, prompt: str) -> str:
+                calls["fallback"] += 1
+                return "ok"
+
+        monkeypatch.setattr("autocrew.analyzer.llm_client.time.sleep", lambda *_: None)
+        client = ResilientLLMClient(
+            Primary(),
+            Fallback(),
+            max_retries=4,
+            label="moonshotai/kimi-k2.6",
+        )
+        assert client.complete("hi") == "ok"
+        assert calls["primary"] == 1
+        assert calls["fallback"] == 1
+
+
 class TestNvidiaClient:
     def test_create_nvidia_client(self):
         from autocrew.analyzer.llm_client import NvidiaClient, create_llm_client

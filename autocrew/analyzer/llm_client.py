@@ -49,6 +49,17 @@ def is_rate_limit_error(exc: Exception) -> bool:
     return "429" in msg or "rate limit" in msg or "rate-limited" in msg
 
 
+def is_model_unavailable_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return (
+        "404" in msg
+        or "410" in msg
+        or "gone" in msg
+        or "end of life" in msg
+        or "not found for account" in msg
+    )
+
+
 def parse_retry_after_seconds(exc: Exception) -> float:
     """Read Retry-After / retry_after_seconds from provider error payloads."""
     msg = str(exc)
@@ -200,10 +211,16 @@ class ResilientLLMClient:
             except LLMError as exc:
                 last_error = exc
                 if self.fallback is not None and (
-                    is_gateway_timeout_error(exc)
+                    is_model_unavailable_error(exc)
+                    or is_gateway_timeout_error(exc)
                     or (is_rate_limit_error(exc) and attempt >= 1)
                 ):
-                    reason = "rate limited" if is_rate_limit_error(exc) else "gateway timeout"
+                    if is_model_unavailable_error(exc):
+                        reason = "model unavailable"
+                    elif is_rate_limit_error(exc):
+                        reason = "rate limited"
+                    else:
+                        reason = "gateway timeout"
                     progress_log(f"{reason.title()} on {self.label} — switching to fallback model")
                     break
                 if attempt < self.max_retries and is_retryable_error(exc):
