@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import os
-import re
 import time
 from dataclasses import dataclass
 from typing import Any
 
-from autocrew.analyzer.llm_client import LLMError, extract_message_text
+from autocrew.analyzer.llm_client import LLMError, extract_message_text, parse_retry_after_seconds
 from autocrew.analyzer.model_registry import ModelTier, cerebras_model_for_tier, groq_model_for_tier, nim_model_for_tier, openrouter_model_for_tier
 from autocrew.analyzer.provider_tracker import (
     PAID_PROVIDER,
@@ -55,16 +54,6 @@ class ProviderHop:
 def _should_fallback(exc: Exception) -> bool:
     msg = str(exc).lower()
     return any(marker in msg for marker in _FALLBACK_MARKERS)
-
-
-def _parse_retry_after_seconds(exc: Exception) -> float:
-    msg = str(exc)
-    match = re.search(r"retry[- ]after[:\s]+(\d+(?:\.\d+)?)", msg, re.I)
-    if match:
-        return float(match.group(1))
-    if "429" in msg.lower() or "rate limit" in msg.lower():
-        return float(settings.llm_retry_backoff_seconds)
-    return 0.0
 
 
 def _build_hops(tier: ModelTier) -> list[ProviderHop]:
@@ -190,7 +179,7 @@ class LiteLLMFallbackClient:
 
             except Exception as exc:
                 last_error = exc
-                wait_s = _parse_retry_after_seconds(exc)
+                wait_s = parse_retry_after_seconds(exc)
                 if wait_s > 0:
                     tracker.record_rate_limit_wait(hop.provider, wait_s * 1000)
                     time.sleep(wait_s)

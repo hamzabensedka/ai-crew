@@ -131,6 +131,41 @@ class TestResilience:
         assert calls["count"] == 3
 
 
+    def test_parse_retry_after_from_openrouter_payload(self):
+        from autocrew.analyzer.llm_client import parse_retry_after_seconds
+
+        exc = LLMError(
+            "OpenRouter API error: 429 - {'retry_after_seconds': 29, "
+            "'metadata': {'headers': {'Retry-After': '30'}}}"
+        )
+        assert parse_retry_after_seconds(exc) == 29.0
+
+    def test_rate_limit_switches_to_fallback(self, monkeypatch):
+        calls = {"primary": 0, "fallback": 0}
+
+        class Primary:
+            def complete(self, prompt: str) -> str:
+                calls["primary"] += 1
+                raise LLMError("OpenRouter API error: Error code: 429 - rate-limited")
+
+        class Fallback:
+            def complete(self, prompt: str) -> str:
+                calls["fallback"] += 1
+                return "ok"
+
+        monkeypatch.setattr("autocrew.analyzer.llm_client.time.sleep", lambda *_: None)
+        client = ResilientLLMClient(
+            Primary(),
+            Fallback(),
+            max_retries=4,
+            backoff_seconds=5.0,
+            label="test-model",
+        )
+        assert client.complete("hi") == "ok"
+        assert calls["primary"] == 2
+        assert calls["fallback"] == 1
+
+
 class TestNvidiaClient:
     def test_create_nvidia_client(self):
         from autocrew.analyzer.llm_client import NvidiaClient, create_llm_client

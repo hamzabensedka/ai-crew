@@ -44,6 +44,31 @@ def is_gateway_timeout_error(exc: Exception) -> bool:
     return "504" in msg or "524" in msg or "gateway timeout" in msg
 
 
+def is_rate_limit_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "429" in msg or "rate limit" in msg or "rate-limited" in msg
+
+
+def parse_retry_after_seconds(exc: Exception) -> float:
+    """Read Retry-After / retry_after_seconds from provider error payloads."""
+    msg = str(exc)
+    for pattern in (
+        r"retry_after_seconds(?:_raw)?['\"]?\s*:\s*(\d+(?:\.\d+)?)",
+        r"retry[- _]after['\"]?\s*:\s*['\"]?\s*(\d+(?:\.\d+)?)",
+        r"'Retry-After'\s*:\s*['\"]?\s*(\d+)",
+    ):
+        match = re.search(pattern, msg, re.I)
+        if match:
+            return float(match.group(1))
+    if is_rate_limit_error(exc):
+        return 30.0
+    return 0.0
+
+
+def _retry_delay(attempt: int, base_seconds: float, exc: Exception) -> float:
+    return max(_backoff_delay(attempt, base_seconds), parse_retry_after_seconds(exc))
+
+
 def _backoff_delay(attempt: int, base_seconds: float, cap_seconds: float = 120.0) -> float:
     return min(base_seconds * (2 ** attempt), cap_seconds)
 
@@ -174,13 +199,15 @@ class ResilientLLMClient:
                 return result
             except LLMError as exc:
                 last_error = exc
-                if is_gateway_timeout_error(exc) and self.fallback is not None:
-                    progress_log(
-                        f"Gateway timeout on {self.label} — switching to fallback model"
-                    )
+                if self.fallback is not None and (
+                    is_gateway_timeout_error(exc)
+                    or (is_rate_limit_error(exc) and attempt >= 1)
+                ):
+                    reason = "rate limited" if is_rate_limit_error(exc) else "gateway timeout"
+                    progress_log(f"{reason.title()} on {self.label} — switching to fallback model")
                     break
                 if attempt < self.max_retries and is_retryable_error(exc):
-                    delay = _backoff_delay(attempt, self.backoff_seconds)
+                    delay = _retry_delay(attempt, self.backoff_seconds, exc)
                     progress_log(
                         f"LLM retry {attempt + 1}/{self.max_retries} for {self.label} "
                         f"in {delay:.0f}s — {exc}",
@@ -200,7 +227,7 @@ class ResilientLLMClient:
                 except LLMError as exc:
                     last_error = exc
                     if attempt < min(3, self.max_retries) and is_retryable_error(exc):
-                        delay = _backoff_delay(attempt, self.backoff_seconds)
+                        delay = _retry_delay(attempt, self.backoff_seconds, exc)
                         progress_log(
                             f"Fallback retry {attempt + 1} for {self.label} in {delay:.0f}s — {exc}"
                         )

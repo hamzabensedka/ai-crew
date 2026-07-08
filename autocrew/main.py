@@ -153,17 +153,42 @@ def _get_per_agent_router() -> PerAgentModelRouter | None:
         return None
 
     kwargs = _llm_settings_kwargs()
-    default_model = settings.fallback_llm
-    default_client = create_model_client(default_model, **kwargs)
+    default_model = settings.default_llm
+    fallback_model = settings.fallback_llm
+    reasoning_roles = frozenset({"product_owner", "architect", "code_reviewer"})
 
-    client_cache: dict[str, LLMClient] = {default_model: default_client}
+    if default_model == fallback_model:
+        reasoning_client = coder_client = create_model_client(default_model, **kwargs)
+    else:
+        reasoning_client = create_model_client(default_model, **kwargs)
+        coder_client = create_model_client(fallback_model, **kwargs)
+        reasoning_client = create_model_client(
+            default_model, **kwargs, fallback=coder_client,
+        )
+        coder_client = create_model_client(
+            fallback_model, **kwargs, fallback=reasoning_client,
+        )
+
+    default_client = reasoning_client
+    client_cache: dict[str, LLMClient] = {
+        default_model: reasoning_client,
+        fallback_model: coder_client,
+    }
     role_model_map: dict[str, tuple[LLMClient, str]] = {}
 
     for role, model_name in role_models.items():
         if model_name == "deterministic":
             continue
         if model_name not in client_cache:
-            client_cache[model_name] = create_model_client(model_name, **kwargs)
+            cross_fallback = (
+                coder_client if role in reasoning_roles else reasoning_client
+            )
+            fb = cross_fallback if model_name not in {default_model, fallback_model} else None
+            client_cache[model_name] = create_model_client(
+                model_name,
+                **kwargs,
+                fallback=fb,
+            )
         role_model_map[role] = (client_cache[model_name], model_name)
 
     if not role_model_map:
@@ -780,10 +805,10 @@ def autopilot(
             raise typer.Exit(0)
 
     def _on_cycle(n: int) -> None:
-        console.print(f"\n[bold cyan]═══ Cycle {n}/{max_cycles} ═══[/bold cyan]")
+        console.print(f"\n[bold cyan]=== Cycle {n}/{max_cycles} ===[/bold cyan]")
 
     def _on_phase(phase: str) -> None:
-        console.print(f"  [bold]→ {phase}[/bold]")
+        console.print(f"  [bold]-> {phase}[/bold]")
 
     try:
         result = run_autopilot(
