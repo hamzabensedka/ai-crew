@@ -112,6 +112,8 @@ def recover_worktrees(
 
     Scans .autocrew/worktrees for dirty trees or branches ahead of base, commits
     uncommitted work, then merges the largest diffs first (up to max_merges).
+
+    When merge=False (dry run), nothing is written — only discovery and logging.
     """
     root = str(Path(project_root).resolve())
     try:
@@ -132,6 +134,15 @@ def recover_worktrees(
     for candidate in candidates:
         if not candidate.dirty:
             continue
+        if not merge:
+            result.skipped.append(
+                f"{candidate.branch}: uncommitted changes (dry run — not committed)"
+            )
+            logger.log(
+                f"Recovery dry run: would commit {candidate.branch} "
+                f"({candidate.session_id}/{candidate.agent_role})"
+            )
+            continue
         message = (
             f"[autocrew] recover: {candidate.session_id}/{candidate.agent_role}"
         )
@@ -151,13 +162,21 @@ def recover_worktrees(
             continue
         seen_branches.add(refreshed.branch)
 
+        # In dry run, include dirty trees that would gain a commit in the diff estimate
+        effective_insertions = refreshed.insertions
+        if not merge and refreshed.dirty and refreshed.insertions < min_insertions:
+            effective_insertions = min_insertions
+
         if not refreshed.diff_stat.strip() or refreshed.diff_stat.startswith("(diff unavailable"):
             if refreshed.ahead <= 0 and not refreshed.dirty:
+                continue
+            if not merge and refreshed.dirty:
+                mergeable.append(refreshed)
                 continue
             result.skipped.append(f"{refreshed.branch}: no diff vs {base_branch}")
             continue
 
-        if refreshed.insertions < min_insertions:
+        if effective_insertions < min_insertions:
             result.skipped.append(
                 f"{refreshed.branch}: below min insertions ({refreshed.insertions} < {min_insertions})"
             )

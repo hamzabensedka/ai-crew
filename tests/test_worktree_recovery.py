@@ -95,6 +95,6 @@ class TestWorktreeRecovery:
         )
 
         assert result is not None
-        assert len(result.committed) == 1
+        assert len(result.committed) == 0
         assert not any(m.merged for m in result.merged)
         assert not (root / "backend" / "src" / "feature.ts").exists()
