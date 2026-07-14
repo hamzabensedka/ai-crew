@@ -82,6 +82,9 @@ class Settings(BaseSettings):
     parallel_execution: bool = True
     parallel_git: bool = True
     git_push: bool = False
+    worktree_recovery: bool = True
+    worktree_recovery_max_merges: int = 10
+    worktree_recovery_min_insertions: int = 5
 
     enforce_scope: bool = True
     require_confirmation: bool = True

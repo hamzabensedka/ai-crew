@@ -20,6 +20,7 @@ from autocrew.tools.git_tools import (
     MergeBatchResult,
     git_branch_diff_stat,
     git_commit,
+    git_commit_succeeded,
     git_create_worktree,
     git_ensure_initial_commit,
     git_init,
@@ -101,7 +102,7 @@ def _review_branch(
 ) -> tuple[bool, str]:
     diff_stat = git_branch_diff_stat(project_root, base_branch, dev.branch)
     if not diff_stat.strip() or diff_stat.startswith("(diff unavailable"):
-        return True, "no changes to review"
+        return False, "no changes to review"
 
     if llm_call is None:
         return True, "approved (no LLM reviewer)"
@@ -276,7 +277,11 @@ async def run_parallel_group_with_git(
             on_task_done=on_task_done,
             skip_git_commit=True,
         )
-        git_commit(dev.worktree_path, f"[autocrew] {dev.role}: parallel work")
+        commit_msg = git_commit(dev.worktree_path, f"[autocrew] {dev.role}: parallel work")
+        if role_tasks and not git_commit_succeeded(commit_msg):
+            logger.log(
+                f"Warning: {dev.role} had {len(role_tasks)} task(s) but commit result: {commit_msg}"
+            )
         return results
 
     all_results: list[str] = []

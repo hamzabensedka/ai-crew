@@ -168,6 +168,7 @@ def run_autopilot(
     use_llm_build: bool = True,
     parallel_git: bool = True,
     git_push: bool = False,
+    fixed_tasks: list[TaskConfig] | None = None,
     on_cycle_start: Callable[[int], None] | None = None,
     on_phase: Callable[[str], None] | None = None,
 ) -> AutopilotResult:
@@ -182,14 +183,28 @@ def run_autopilot(
         if on_cycle_start:
             on_cycle_start(cycle)
 
-        if on_phase:
+        if fixed_tasks is None and on_phase:
             on_phase("debate (crew review)")
 
         skip_debate = (
             settings.build_skip_debate_if_pattern_exists
             and should_skip_architecture_debate(root)
         )
-        if skip_debate:
+        if fixed_tasks is not None:
+            if on_phase:
+                on_phase("debate skipped (remaining work focus)")
+            from autocrew.debate.debate_model import DebateResult
+
+            debate = DebateResult(
+                project_name=context.project_name,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                rounds=[],
+                consensus_reached=True,
+                final_plan_path=str(Path(root) / "docs" / "product.md"),
+                debate_dir="",
+                action_items=[],
+            )
+        elif skip_debate:
             if on_phase:
                 on_phase("debate skipped (established pattern)")
             from autocrew.debate.debate_model import DebateResult
@@ -203,6 +218,7 @@ def run_autopilot(
                 debate_dir="",
                 action_items=[],
             )
+            blockers = 0
         elif dual_router is not None:
             debate = run_debate(
                 context,
@@ -230,14 +246,19 @@ def run_autopilot(
                 max_rounds=debate_rounds,
             )
 
-        blockers = debate.rounds[-1].total_blockers if debate.rounds else (0 if skip_debate else 999)
-        debate_tasks = build_tasks_from_debate(debate, squad, context)
-        tasks: list[TaskConfig] = merge_foundation_tasks(squad, context, debate_tasks)
-        save_tasks(tasks, output_dir, context.project_name)
+        if fixed_tasks is not None:
+            tasks = fixed_tasks
+            blockers = 0
+            debate_tasks = fixed_tasks
+        else:
+            blockers = debate.rounds[-1].total_blockers if debate.rounds else (0 if skip_debate else 999)
+            debate_tasks = build_tasks_from_debate(debate, squad, context)
+            tasks = merge_foundation_tasks(squad, context, debate_tasks)
+            save_tasks(tasks, output_dir, context.project_name)
 
         tasks_built = 0
         run_build = bool(debate_tasks) or skip_debate
-        if run_build and (not debate.consensus_reached or skip_debate):
+        if run_build and (fixed_tasks is not None or not debate.consensus_reached or skip_debate):
             if on_phase:
                 on_phase(f"build ({min(build_limit, len(tasks))} tasks)")
             try:

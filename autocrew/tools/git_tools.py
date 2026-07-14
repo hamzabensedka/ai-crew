@@ -141,6 +141,42 @@ def git_commit(project_root: str, message: str) -> str:
         return f"Git commit failed: {exc}"
 
 
+def git_commit_succeeded(message: str) -> bool:
+    return message.startswith("Committed:")
+
+
+def git_worktree_porcelain(worktree_path: str) -> str:
+    proc = _run_git(worktree_path, "status", "--porcelain")
+    if proc.returncode != 0:
+        return ""
+    return proc.stdout.strip()
+
+
+def git_worktree_branch(worktree_path: str) -> str:
+    proc = _run_git(worktree_path, "rev-parse", "--abbrev-ref", "HEAD")
+    if proc.returncode != 0:
+        return ""
+    return proc.stdout.strip()
+
+
+def git_commits_ahead(worktree_path: str, base_branch: str) -> int:
+    proc = _run_git(worktree_path, "rev-list", "--count", f"{base_branch}..HEAD")
+    if proc.returncode != 0:
+        return 0
+    try:
+        return int(proc.stdout.strip())
+    except ValueError:
+        return 0
+
+
+def git_diff_shortstat(project_root: str, base_branch: str, feature_branch: str) -> str:
+    try:
+        repo = _repo(project_root)
+        return repo.git.diff("--shortstat", f"{base_branch}...{feature_branch}")
+    except Exception:
+        return ""
+
+
 def git_branch(project_root: str, branch_name: str) -> str:
     try:
         repo = _repo(project_root)

@@ -19,7 +19,8 @@ from autocrew.metrics import begin_session, end_session
 from autocrew.squad.squad_model import AgentConfig, AgentRole, Squad
 from autocrew.tasks.task_model import TaskConfig
 from autocrew.tools.file_tools import write_file
-from autocrew.tools.git_tools import git_commit
+from autocrew.tools.git_tools import git_commit, git_commit_succeeded
+from autocrew.tools.worktree_recovery import recover_worktrees
 
 
 def _inject_context(task: TaskConfig, project_root: str) -> str:
@@ -271,12 +272,16 @@ def run_crew(
     on_task_done: Callable[[AgentConfig, TaskConfig, str], None] | None = None,
     parallel_git: bool | None = None,
     git_push: bool | None = None,
+    worktree_recovery: bool | None = None,
 ) -> str:
     root = project_root or context.codebase_path or "."
     Path(root).mkdir(parents=True, exist_ok=True)
 
     use_parallel_git = settings.parallel_git if parallel_git is None else parallel_git
     do_git_push = settings.git_push if git_push is None else git_push
+    do_worktree_recovery = (
+        settings.worktree_recovery if worktree_recovery is None else worktree_recovery
+    )
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     log_path = str(Path(settings.logs_dir) / f"run_{timestamp}.log")
@@ -327,6 +332,14 @@ def run_crew(
             sequential_pre, squad, tasks, context, root, crew_logger, max_retries, **run_kwargs
         )
     )
+
+    if do_worktree_recovery:
+        recover_worktrees(
+            root,
+            crew_logger,
+            max_merges=settings.worktree_recovery_max_merges,
+            min_insertions=settings.worktree_recovery_min_insertions,
+        )
 
     parallel_kwargs = {**run_kwargs, "parallel_git": use_parallel_git, "git_push": do_git_push}
 

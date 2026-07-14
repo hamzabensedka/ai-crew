@@ -609,6 +609,11 @@ def build(
         "--push/--no-push",
         help="Push approved branches to origin after review",
     ),
+    recover_worktrees: Optional[bool] = typer.Option(
+        None,
+        "--recover-worktrees/--no-recover-worktrees",
+        help="Before dev phase, commit and merge orphaned .autocrew/worktrees",
+    ),
     simulation: bool = typer.Option(
         False,
         "--simulation",
@@ -669,8 +674,11 @@ def build(
 
     use_parallel_git = settings.parallel_git if parallel_git is None else parallel_git
     do_push = settings.git_push if git_push is None else git_push
+    do_recover = settings.worktree_recovery if recover_worktrees is None else recover_worktrees
     if use_parallel_git:
         console.print("[dim]Parallel git: each dev → branch → code review → merge[/dim]")
+    if do_recover:
+        console.print("[dim]Worktree recovery: scan .autocrew/worktrees before dev phase[/dim]")
 
     if not yes and settings.require_confirmation:
         mode = "LLM-powered" if use_llm else "simulation"
@@ -694,6 +702,7 @@ def build(
             on_task_done=_on_task_done,
             parallel_git=use_parallel_git,
             git_push=do_push,
+            worktree_recovery=do_recover,
         )
         if use_llm and router:
             result = run_crew(
@@ -726,11 +735,88 @@ def build(
     console.print(f"[dim]Log:[/dim] {settings.logs_dir}")
 
 
+@app.command("recover-worktrees")
+def recover_worktrees_cmd(
+    project_root: Optional[str] = typer.Option(None, "--root", help="Target project root"),
+    max_merges: int = typer.Option(
+        0,
+        "--max-merges",
+        help="Max branches to merge (0 = use settings.worktree_recovery_max_merges)",
+    ),
+    min_insertions: int = typer.Option(
+        0,
+        "--min-insertions",
+        help="Min diff insertions to merge (0 = use settings default)",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="List mergeable branches without merging",
+    ),
+) -> None:
+    """Commit and merge unmerged agent work from .autocrew/worktrees."""
+    from autocrew.crew.crew_logger import CrewLogger
+    from autocrew.tools.worktree_recovery import recover_worktrees
+
+    settings.ensure_dirs()
+    root = project_root or "."
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    logger = CrewLogger(log_path=str(Path(settings.logs_dir) / f"recover_{timestamp}.log"))
+
+    console.print(f"[bold]Scanning worktrees in[/bold] {Path(root).resolve()}")
+    result = recover_worktrees(
+        root,
+        logger,
+        max_merges=max_merges or settings.worktree_recovery_max_merges,
+        min_insertions=min_insertions or settings.worktree_recovery_min_insertions,
+        merge=not dry_run,
+    )
+    logger.flush()
+
+    if result is None:
+        console.print("[red]Recovery failed — not a git repository?[/red]")
+        raise typer.Exit(1)
+
+    table = Table(title="Worktree recovery")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value")
+    table.add_row("Base branch", result.base_branch)
+    table.add_row("Discovered", str(result.discovered))
+    table.add_row("Committed", str(len(result.committed)))
+    table.add_row("Merged", str(sum(1 for m in result.merged if m.merged)))
+    table.add_row("Conflicts", str(len(result.conflicts)))
+    table.add_row("Skipped", str(len(result.skipped)))
+    console.print(table)
+
+    if result.committed:
+        console.print("\n[green]Committed:[/green]")
+        for item in result.committed:
+            console.print(f"  • {item}")
+    if result.merged:
+        console.print("\n[green]Merged:[/green]")
+        for attempt in result.merged:
+            if attempt.merged:
+                console.print(f"  • {attempt.branch} ({attempt.role})")
+    if result.conflicts:
+        console.print("\n[yellow]Conflicts (resolve manually):[/yellow]")
+        for branch in result.conflicts:
+            console.print(f"  • {branch}")
+    if dry_run and result.skipped:
+        console.print("\n[dim]Skipped / dry-run details in log[/dim]")
+
+    console.print(f"\n[dim]Log:[/dim] {settings.logs_dir}")
+
+
 @app.command()
 def autopilot(
     project_root: Optional[str] = typer.Option(None, "--root", help="Target project root"),
     context_path: Optional[str] = typer.Option(None, "--context", help="Path to context JSON"),
     squad_path: Optional[str] = typer.Option(None, "--squad", help="Path to squad JSON"),
+    tasks_path: Optional[str] = typer.Option(
+        None,
+        "--tasks",
+        help="Fixed task list JSON (skips debate; use for remaining/partial features only)",
+    ),
     max_cycles: int = typer.Option(50, "--max-cycles", help="Max debate→build loops (safety cap)"),
     debate_rounds: int = typer.Option(1, "--debate-rounds", "-r", help="Debate rounds per cycle"),
     build_limit: int = typer.Option(5, "--build-limit", "-n", help="LLM build tasks per cycle"),
@@ -778,6 +864,11 @@ def autopilot(
     context = load_context(ctx_file)
     squad = load_squad(sq_file)
     root = project_root or context.codebase_path or "."
+    fixed_tasks = load_tasks(tasks_path) if tasks_path else None
+    if fixed_tasks:
+        console.print(
+            f"[green]Remaining-work mode:[/green] {len(fixed_tasks)} fixed tasks from {tasks_path}"
+        )
     use_dual = settings.debate_dual_model if dual_model is None else dual_model
     router, llm, routing_mode = _resolve_llm_routing(use_dual)
 
@@ -828,6 +919,7 @@ def autopilot(
             use_llm_build=True,
             parallel_git=settings.parallel_git if parallel_git is None else parallel_git,
             git_push=settings.git_push if git_push is None else git_push,
+            fixed_tasks=fixed_tasks,
             on_cycle_start=_on_cycle,
             on_phase=_on_phase,
         )
