@@ -1,0 +1,150 @@
+[
+  {
+    "task_id": "remain_user_profile",
+    "title": "Complete User Profile (mobile + API)",
+    "description": "Finish the User Profile feature: PATCH /profile with validation, avatar/name/phone fields in Prisma if missing, mobile profile screen wired to API with edit flow and error states. Do NOT rebuild auth or booking.",
+    "assigned_agent_role": "frontend_developer",
+    "depends_on": [],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Working profile screen and API integration with tests or manual verification steps in a short note.",
+    "context_files": ["docs/product.md", "docs/architecture.md"]
+  },
+  {
+    "task_id": "remain_reviews_backend",
+    "title": "Reviews & Ratings — full backend CRUD",
+    "description": "Complete reviews module in apps/api: POST/GET reviews per business, aggregate rating stats, moderation flags, Prisma Review model migrations if incomplete. Replace any stub/TODO in reviews module.",
+    "assigned_agent_role": "backend_developer",
+    "depends_on": [],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Working review endpoints with validation and role guards.",
+    "context_files": ["docs/product.md", "docs/architecture.md"]
+  },
+  {
+    "task_id": "remain_reviews_frontend",
+    "title": "Reviews & Ratings — mobile submit & display",
+    "description": "Wire SalonReviews and business detail reviews tab to real API: list reviews, submit review after appointment, star rating input, empty states.",
+    "assigned_agent_role": "frontend_developer",
+    "depends_on": ["remain_reviews_backend"],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Users can view and submit reviews on mobile.",
+    "context_files": ["docs/product.md"]
+  },
+  {
+    "task_id": "remain_payment_backend",
+    "title": "Payment Integration — Stripe backend",
+    "description": "Implement real Stripe integration in apps/api: PaymentIntent or Checkout Session, webhook handler, PaymentProvider/PaymentStatus persistence, link to appointments. Replace stub payment module under apps/api/src/payment or backend/src/payment.",
+    "assigned_agent_role": "backend_developer",
+    "depends_on": [],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Stripe checkout + webhook flow with env vars documented in .env.example.",
+    "context_files": ["docs/product.md", "docs/architecture.md"]
+  },
+  {
+    "task_id": "remain_payment_frontend",
+    "title": "Payment Integration — mobile checkout step",
+    "description": "Add payment step to booking flow (or post-booking pay): integrate with payment API, handle success/failure, show receipt state. Use existing shared PaymentStatus types.",
+    "assigned_agent_role": "frontend_developer",
+    "depends_on": ["remain_payment_backend"],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "End-to-end paid booking or pay-after-book path on mobile.",
+    "context_files": ["docs/product.md"]
+  },
+  {
+    "task_id": "remain_notifications",
+    "title": "Notifications — email/push delivery",
+    "description": "Implement notification delivery: queue-friendly service (email via Resend/SMTP or push stub), templates for booking confirmation/reminder, wire NotificationChannel enum. Extend notifications module beyond empty service.",
+    "assigned_agent_role": "ai_engineer",
+    "depends_on": [],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "At least booking confirmation email path works end-to-end.",
+    "context_files": ["docs/product.md", "docs/architecture.md"]
+  },
+  {
+    "task_id": "remain_provider_portal_backend",
+    "title": "Provider / Business Owner Portal — API",
+    "description": "Build provider APIs: manage business profile, services, staff, availability rules, view bookings for owned businesses. Enforce provider role guards. Flesh out provider-portal module (not empty Nest module).",
+    "assigned_agent_role": "backend_developer",
+    "depends_on": [],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Provider can CRUD services/staff and see their appointments via API.",
+    "context_files": ["docs/product.md", "docs/architecture.md"]
+  },
+  {
+    "task_id": "remain_provider_portal_mobile",
+    "title": "Provider / Business Owner Portal — mobile screens",
+    "description": "Add provider-facing screens (or section): dashboard summary, today's appointments, quick service edit. Route gated by provider role.",
+    "assigned_agent_role": "frontend_developer",
+    "depends_on": ["remain_provider_portal_backend"],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Provider role users have a usable owner workspace on mobile.",
+    "context_files": ["docs/product.md"]
+  },
+  {
+    "task_id": "remain_admin_dashboard",
+    "title": "Admin Dashboard — Next.js app scaffold",
+    "description": "Create apps/admin (Next.js App Router): login via Clerk admin role, list businesses/users, basic moderation queue for reviews. Minimal but real pages — not a single empty module file.",
+    "assigned_agent_role": "frontend_developer",
+    "depends_on": ["remain_reviews_backend"],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Admin app runs locally with at least dashboard + businesses list.",
+    "context_files": ["docs/architecture.md", "docs/product.md"]
+  },
+  {
+    "task_id": "remain_bullmq_jobs",
+    "title": "Background Jobs (BullMQ)",
+    "description": "Wire BullMQ workers in apps/api: jobs for notification send, availability cache refresh, optional scan simulation. Redis connection reuse. Replace background-jobs stub module.",
+    "assigned_agent_role": "backend_developer",
+    "depends_on": ["remain_notifications"],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "At least one worker processes a queued job successfully.",
+    "context_files": ["docs/architecture.md"]
+  },
+  {
+    "task_id": "remain_devops_stripe_ci",
+    "title": "DevOps — Stripe webhooks & env for payments",
+    "description": "Document and configure Stripe webhook route in deployment, add GitHub Action step or docker env for STRIPE_* secrets, update .env.example for payment vars.",
+    "assigned_agent_role": "devops_engineer",
+    "depends_on": ["remain_payment_backend"],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Webhook URL and env documented; CI/docker updated.",
+    "context_files": ["docs/architecture.md"]
+  },
+  {
+    "task_id": "remain_code_review",
+    "title": "Code review — remaining features only",
+    "description": "Review payment, provider portal, reviews, notifications, admin, and BullMQ changes for security (webhooks, auth guards), error handling, and consistency with architecture doc.",
+    "assigned_agent_role": "code_reviewer",
+    "depends_on": [
+      "remain_payment_frontend",
+      "remain_provider_portal_mobile",
+      "remain_admin_dashboard",
+      "remain_bullmq_jobs"
+    ],
+    "output_format": "report",
+    "output_path": "output/reports/code_review_remaining.md",
+    "expected_output": "Review report with blockers and fixes for remaining features.",
+    "context_files": ["docs/product.md", "docs/architecture.md"]
+  },
+  {
+    "task_id": "remain_track_progress",
+    "title": "Progress report — remaining scope",
+    "description": "Compare codebase against product spec focusing ONLY on partial/missing features: Payment, Provider Portal, Reviews, Notifications, Admin, BullMQ, User Profile.",
+    "assigned_agent_role": "progress_tracker",
+    "depends_on": ["remain_code_review"],
+    "output_format": "report",
+    "output_path": "output/reports/progress_report.md",
+    "expected_output": "Updated completion % and list of what is still open.",
+    "context_files": ["docs/product.md"]
+  }
+]
