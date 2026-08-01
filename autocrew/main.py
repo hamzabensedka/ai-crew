@@ -731,7 +731,7 @@ def build(
         console.print(f"[red]Build failed:[/red] {exc}")
         raise typer.Exit(1) from exc
 
-    console.print(Panel(result, title="Build Complete"))
+    console.print(Panel(str(result), title="Build Complete"))
     console.print(f"[dim]Log:[/dim] {settings.logs_dir}")
 
 
@@ -817,7 +817,12 @@ def autopilot(
         "--tasks",
         help="Fixed task list JSON (skips debate; use for remaining/partial features only)",
     ),
-    max_cycles: int = typer.Option(50, "--max-cycles", help="Max debate→build loops (safety cap)"),
+    max_cycles: int = typer.Option(10, "--max-cycles", help="Max debate→build loops (safety cap)"),
+    stagnant_cycles: int = typer.Option(
+        3,
+        "--stagnant-cycles",
+        help="Stop after N consecutive cycles with no merges and unchanged completion/security/tests",
+    ),
     debate_rounds: int = typer.Option(1, "--debate-rounds", "-r", help="Debate rounds per cycle"),
     build_limit: int = typer.Option(5, "--build-limit", "-n", help="LLM build tasks per cycle"),
     min_completion: float = typer.Option(
@@ -884,7 +889,7 @@ def autopilot(
         f"  • [green]App fully built[/green] (no high-priority gaps, {min_completion:.0f}% complete)\n"
         f"  • [green]Security audit passes[/green] (no critical/high issues)\n"
         f"  • [green]Tests pass[/green]" + ("" if run_tests else " [dim](disabled)[/dim]") + "\n\n"
-        f"Max cycles: {max_cycles} | Build {build_limit}/cycle | Debate {debate_rounds} round(s)/cycle\n"
+        f"Max cycles: {max_cycles} | Stagnant stop: {stagnant_cycles} | Build {build_limit}/cycle | Debate {debate_rounds} round(s)/cycle\n"
         "[dim]Press Ctrl+C to stop manually.[/dim]",
         title="AutoCrew Autopilot",
     ))
@@ -908,6 +913,7 @@ def autopilot(
             root,
             settings.output_dir,
             max_cycles=max_cycles,
+            stagnant_cycles=stagnant_cycles,
             debate_rounds=debate_rounds,
             build_limit=build_limit,
             min_completion=min_completion,
@@ -935,6 +941,8 @@ def autopilot(
     table.add_column("Consensus")
     table.add_column("Blockers", style="red")
     table.add_column("Built")
+    table.add_column("Approved")
+    table.add_column("Merged")
     table.add_column("Secure")
     table.add_column("Tests")
     for c in result.cycles:
@@ -943,6 +951,8 @@ def autopilot(
             "[green]yes[/green]" if c.consensus_reached else "no",
             str(c.total_blockers),
             str(c.tasks_built),
+            str(c.branches_approved),
+            str(c.branches_merged),
             "[green]yes[/green]" if c.build_complete else "no",
             "[green]yes[/green]" if c.security_passed else "[red]no[/red]",
             "pass" if c.tests_passed else ("fail" if c.tests_passed is False else "—"),

@@ -1,0 +1,24 @@
+[
+  {
+    "task_id": "remain_provider_portal_backend",
+    "title": "Provider / Business Owner Portal — API",
+    "description": "Build provider APIs: manage business profile, services, staff, availability rules, view bookings for owned businesses. Enforce provider role guards. Flesh out provider-portal module (not empty Nest module).",
+    "assigned_agent_role": "backend_developer",
+    "depends_on": [],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Provider can CRUD services/staff and see their appointments via API.",
+    "context_files": ["docs/product.md", "docs/architecture.md"]
+  },
+  {
+    "task_id": "remain_provider_portal_mobile",
+    "title": "Provider / Business Owner Portal — mobile screens",
+    "description": "Add provider-facing screens (or section): dashboard summary, today's appointments, quick service edit. Route gated by provider role.",
+    "assigned_agent_role": "frontend_developer",
+    "depends_on": ["remain_provider_portal_backend"],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Provider role users have a usable owner workspace on mobile.",
+    "context_files": ["docs/product.md"]
+  }
+]

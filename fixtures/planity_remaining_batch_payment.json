@@ -1,0 +1,35 @@
+[
+  {
+    "task_id": "remain_payment_backend",
+    "title": "Payment Integration — Stripe backend",
+    "description": "Implement real Stripe integration in apps/api: PaymentIntent or Checkout Session, webhook handler, PaymentProvider/PaymentStatus persistence, link to appointments. Replace stub payment module under apps/api/src/payment or backend/src/payment.",
+    "assigned_agent_role": "backend_developer",
+    "depends_on": [],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Stripe checkout + webhook flow with env vars documented in .env.example.",
+    "context_files": ["docs/product.md", "docs/architecture.md"]
+  },
+  {
+    "task_id": "remain_payment_frontend",
+    "title": "Payment Integration — mobile checkout step",
+    "description": "Add payment step to booking flow (or post-booking pay): integrate with payment API, handle success/failure, show receipt state. Use existing shared PaymentStatus types.",
+    "assigned_agent_role": "frontend_developer",
+    "depends_on": ["remain_payment_backend"],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "End-to-end paid booking or pay-after-book path on mobile.",
+    "context_files": ["docs/product.md"]
+  },
+  {
+    "task_id": "remain_devops_stripe_ci",
+    "title": "DevOps — Stripe webhooks & env for payments",
+    "description": "Document and configure Stripe webhook route in deployment, add GitHub Action step or docker env for STRIPE_* secrets, update .env.example for payment vars.",
+    "assigned_agent_role": "devops_engineer",
+    "depends_on": ["remain_payment_backend"],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Webhook URL and env documented; CI/docker updated.",
+    "context_files": ["docs/architecture.md"]
+  }
+]

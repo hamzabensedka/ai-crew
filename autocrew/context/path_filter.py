@@ -36,6 +36,7 @@ ALLOWED_SOURCE_PREFIXES = (
     "apps/api/src/",
     "apps/mobile/src/",
     "apps/mobile/app/",
+    "apps/admin/",
     "packages/",
     "docs/",
 )

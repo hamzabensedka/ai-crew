@@ -27,6 +27,8 @@ class MergeAttempt:
 class MergeBatchResult:
     base_branch: str
     approved: list[str] = field(default_factory=list)
+    rejected: list[str] = field(default_factory=list)
+    needs_split: list[str] = field(default_factory=list)
     merged: list[MergeAttempt] = field(default_factory=list)
     conflicts_on: list[str] = field(default_factory=list)
     conflict_fixer_role: str = ""
@@ -47,6 +49,8 @@ def _repo(project_root: str):
 def _git_env() -> dict[str, str]:
     env = os.environ.copy()
     env["GIT_TERMINAL_PROMPT"] = "0"
+    # Skip graphify and other heavy post-commit hooks during unattended agent commits.
+    env.setdefault("GRAPHIFY_SKIP_HOOK", "1")
     return env
 
 
@@ -96,7 +100,7 @@ def git_ensure_initial_commit(project_root: str, branch: str = "main") -> str:
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.touch(exist_ok=True)
     repo.index.add([str(marker)])
-    repo.index.commit("Initial commit")
+    repo.index.commit("Initial commit", skip_hooks=True)
     return f"Created initial commit on {branch}"
 
 
@@ -135,7 +139,7 @@ def git_commit(project_root: str, message: str) -> str:
         repo.git.add(A=True)
         if not repo.is_dirty(untracked_files=True):
             return "Nothing to commit"
-        repo.index.commit(message)
+        repo.index.commit(message, skip_hooks=True)
         return f"Committed: {message}"
     except Exception as exc:
         return f"Git commit failed: {exc}"
@@ -196,6 +200,42 @@ def git_branch_diff_stat(project_root: str, base_branch: str, feature_branch: st
         return repo.git.diff("--stat", f"{base_branch}...{feature_branch}")
     except Exception as exc:
         return f"(diff unavailable: {exc})"
+
+
+def git_branch_diff_sample(
+    project_root: str,
+    base_branch: str,
+    feature_branch: str,
+    *,
+    max_chars: int = 6000,
+) -> str:
+    """Return a capped unified diff sample for LLM review."""
+    try:
+        repo = _repo(project_root)
+        diff = repo.git.diff(f"{base_branch}...{feature_branch}")
+        if not diff.strip():
+            return "(no diff)"
+        if len(diff) <= max_chars:
+            return diff
+        return diff[:max_chars] + f"\n\n... diff truncated ({len(diff)} chars total) ..."
+    except Exception as exc:
+        return f"(diff sample unavailable: {exc})"
+
+
+def count_changed_files_from_diff_stat(diff_stat: str) -> int:
+    """Count file lines in a git diff --stat block."""
+    if not diff_stat.strip() or diff_stat.startswith("(diff unavailable"):
+        return 0
+    count = 0
+    for line in diff_stat.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith(" "):
+            continue
+        if " changed" in stripped and " file" in stripped and "|" not in stripped:
+            continue
+        if "|" in line:
+            count += 1
+    return count
 
 
 def git_create_worktree(

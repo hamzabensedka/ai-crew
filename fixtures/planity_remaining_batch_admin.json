@@ -1,0 +1,40 @@
+[
+  {
+    "task_id": "remain_admin_dashboard",
+    "title": "Admin Dashboard — Next.js app scaffold",
+    "description": "Create apps/admin (Next.js App Router): login via Clerk admin role, list businesses/users, basic moderation queue for reviews. Minimal but real pages — not a single empty module file.",
+    "assigned_agent_role": "frontend_developer",
+    "depends_on": ["remain_reviews_backend"],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Admin app runs locally with at least dashboard + businesses list.",
+    "context_files": ["docs/architecture.md", "docs/product.md"]
+  },
+  {
+    "task_id": "remain_code_review",
+    "title": "Code review — remaining features only",
+    "description": "Review payment, provider portal, reviews, notifications, admin, and BullMQ changes for security (webhooks, auth guards), error handling, and consistency with architecture doc.",
+    "assigned_agent_role": "code_reviewer",
+    "depends_on": [
+      "remain_payment_frontend",
+      "remain_provider_portal_mobile",
+      "remain_admin_dashboard",
+      "remain_bullmq_jobs"
+    ],
+    "output_format": "report",
+    "output_path": "output/reports/code_review_remaining.md",
+    "expected_output": "Review report with blockers and fixes for remaining features.",
+    "context_files": ["docs/product.md", "docs/architecture.md"]
+  },
+  {
+    "task_id": "remain_track_progress",
+    "title": "Progress report — remaining scope",
+    "description": "Compare codebase against product spec focusing ONLY on partial/missing features: Payment, Provider Portal, Reviews, Notifications, Admin, BullMQ, User Profile.",
+    "assigned_agent_role": "progress_tracker",
+    "depends_on": ["remain_code_review"],
+    "output_format": "report",
+    "output_path": "output/reports/progress_report.md",
+    "expected_output": "Updated completion % and list of what is still open.",
+    "context_files": ["docs/product.md"]
+  }
+]

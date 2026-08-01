@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -15,12 +16,37 @@ from autocrew.crew.crew_logger import CrewLogger
 from autocrew.crew.llm_task_executor import execute_task_with_llm
 from autocrew.crew.parallel_git import run_parallel_group_with_git
 from autocrew.crew.task_context import inject_task_context
+from autocrew.debate.model_router import DualModelRouter
 from autocrew.metrics import begin_session, end_session
 from autocrew.squad.squad_model import AgentConfig, AgentRole, Squad
 from autocrew.tasks.task_model import TaskConfig
 from autocrew.tools.file_tools import write_file
-from autocrew.tools.git_tools import git_commit, git_commit_succeeded
+from autocrew.tools.git_tools import MergeBatchResult, git_commit, git_commit_succeeded
 from autocrew.tools.worktree_recovery import recover_worktrees
+
+
+@dataclass
+class CrewRunResult:
+    summary: str
+    merge_batches: list[MergeBatchResult] = field(default_factory=list)
+
+    @property
+    def branches_approved(self) -> int:
+        return sum(len(batch.approved) for batch in self.merge_batches)
+
+    @property
+    def branches_merged(self) -> int:
+        return sum(
+            sum(1 for attempt in batch.merged if attempt.merged)
+            for batch in self.merge_batches
+        )
+
+    @property
+    def branches_rejected(self) -> int:
+        return sum(len(batch.rejected) for batch in self.merge_batches)
+
+    def __str__(self) -> str:
+        return self.summary
 
 
 def _inject_context(task: TaskConfig, project_root: str) -> str:
@@ -185,7 +211,7 @@ async def _run_parallel_group(
     on_task_done: Callable[[AgentConfig, TaskConfig, str], None] | None = None,
     parallel_git: bool = False,
     git_push: bool = False,
-) -> list[str]:
+) -> tuple[list[str], MergeBatchResult | None]:
     if parallel_git:
         results, merge_info = await run_parallel_group_with_git(
             roles,
@@ -207,10 +233,11 @@ async def _run_parallel_group(
         if merge_info:
             logger.log(
                 f"Parallel git: approved={merge_info.approved}, "
-                f"conflicts={merge_info.conflicts_on}, fixer={merge_info.conflict_fixer_role or 'none'}"
+                f"rejected={merge_info.rejected}, "
+                f"conflicts={merge_info.conflicts_on}, "
+                f"fixer={merge_info.conflict_fixer_role or 'none'}"
             )
-        if results or merge_info:
-            return results
+        return results, merge_info
 
     async def run_role(role: str) -> list[str]:
         return await asyncio.to_thread(
@@ -231,7 +258,8 @@ async def _run_parallel_group(
         )
 
     group_results = await asyncio.gather(*[run_role(r) for r in roles])
-    return [item for sublist in group_results for item in sublist]
+    flat = [item for sublist in group_results for item in sublist]
+    return flat, None
 
 
 def _limit_to_one_feature(tasks: list[TaskConfig]) -> list[TaskConfig]:
@@ -273,7 +301,7 @@ def run_crew(
     parallel_git: bool | None = None,
     git_push: bool | None = None,
     worktree_recovery: bool | None = None,
-) -> str:
+) -> CrewRunResult:
     root = project_root or context.codebase_path or "."
     Path(root).mkdir(parents=True, exist_ok=True)
 
@@ -318,6 +346,7 @@ def run_crew(
 
     max_retries = settings.max_retries_per_task
     all_results: list[str] = []
+    merge_batches: list[MergeBatchResult] = []
     run_kwargs = {
         "use_llm": use_llm,
         "dual_router": dual_router,
@@ -345,12 +374,14 @@ def run_crew(
 
     if squad.parallel_groups and settings.parallel_execution:
         for group in squad.parallel_groups:
-            results = asyncio.run(
+            results, merge_info = asyncio.run(
                 _run_parallel_group(
                     group, squad, tasks, context, root, crew_logger, max_retries, **parallel_kwargs
                 )
             )
             all_results.extend(results)
+            if merge_info is not None:
+                merge_batches.append(merge_info)
     else:
         devs_in_order = [r for r in squad.execution_order if r in dev_roles]
         all_results.extend(
@@ -380,7 +411,7 @@ def run_crew(
             "task_limit": task_limit,
         },
     )
-    return summary
+    return CrewRunResult(summary=summary, merge_batches=merge_batches)
 
 
 def run_crew_with_crewai(

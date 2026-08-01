@@ -18,6 +18,8 @@ from autocrew.tasks.task_model import TaskConfig
 from autocrew.tools.git_tools import (
     GitError,
     MergeBatchResult,
+    count_changed_files_from_diff_stat,
+    git_branch_diff_sample,
     git_branch_diff_stat,
     git_commit,
     git_commit_succeeded,
@@ -30,6 +32,7 @@ from autocrew.tools.git_tools import (
     git_resolve_base_branch,
 )
 
+REVIEW_FILE_THRESHOLD = 80
 
 REVIEW_PROMPT = """You are {reviewer_name}, code reviewer for {project_name}.
 
@@ -37,9 +40,13 @@ Review this developer branch before merge.
 
 Developer role: {role}
 Branch: {branch}
+Files changed: {file_count}
 
 Diff stat (base...feature):
 {diff_stat}
+
+Diff sample (truncated):
+{diff_sample}
 
 Return JSON:
 {{
@@ -48,7 +55,9 @@ Return JSON:
   "summary": "one sentence"
 }}
 
-Approve only if the change set looks safe, scoped, and ready to merge.
+Approve when the change set is safe and correct. Do NOT reject solely because the
+diff is large or touches many files — reject only for security issues, missing auth
+guards, broken logic, or clear correctness bugs.
 Return only valid JSON.
 """
 
@@ -99,20 +108,34 @@ def _review_branch(
     base_branch: str,
     dev: DevBranch,
     llm_call: Callable[[str], str] | None,
-) -> tuple[bool, str]:
+) -> tuple[bool, str, str | None]:
+    """Return (approved, summary, status) where status is None, 'needs_split', or 'no_changes'."""
     diff_stat = git_branch_diff_stat(project_root, base_branch, dev.branch)
     if not diff_stat.strip() or diff_stat.startswith("(diff unavailable"):
-        return False, "no changes to review"
+        return False, "no changes to review", "no_changes"
+
+    file_count = count_changed_files_from_diff_stat(diff_stat)
+    if file_count == 0:
+        return False, "no changes to review", "no_changes"
+    if file_count > REVIEW_FILE_THRESHOLD:
+        return (
+            False,
+            f"needs_split: {file_count} files changed (>{REVIEW_FILE_THRESHOLD}); split into smaller batches",
+            "needs_split",
+        )
 
     if llm_call is None:
-        return True, "approved (no LLM reviewer)"
+        return True, "approved (no LLM reviewer)", None
 
+    diff_sample = git_branch_diff_sample(project_root, base_branch, dev.branch)
     prompt = REVIEW_PROMPT.format(
         reviewer_name=reviewer.name,
         project_name=context.project_name,
         role=dev.role,
         branch=dev.branch,
+        file_count=file_count,
         diff_stat=diff_stat[:8000],
+        diff_sample=diff_sample,
     )
     try:
         data = call_with_json_retry(llm_call, prompt)
@@ -120,9 +143,9 @@ def _review_branch(
         summary = str(data.get("summary", ""))
         if data.get("blockers"):
             summary += " | blockers: " + "; ".join(str(b) for b in data["blockers"][:3])
-        return approved, summary
+        return approved, summary, None
     except Exception as exc:
-        return False, f"review failed: {exc}"
+        return False, f"review failed: {exc}", None
 
 
 def _pick_conflict_fixer(squad: Squad, roles: list[str]) -> AgentConfig:
@@ -297,24 +320,34 @@ async def run_parallel_group_with_git(
 
     merge_result = MergeBatchResult(base_branch=base_branch)
     approved_devs: list[DevBranch] = []
+    rejected_devs: list[DevBranch] = []
 
     for dev in dev_branches:
         if reviewer is None:
-            approved, summary = True, "auto-approved (no reviewer)"
+            approved, summary, review_status = True, "auto-approved (no reviewer)", None
         else:
-            approved, summary = _review_branch(
+            approved, summary, review_status = _review_branch(
                 reviewer, context, str(root), base_branch, dev, reviewer_llm
             )
-        logger.log(f"Review {dev.branch}: {'APPROVED' if approved else 'REJECTED'} — {summary}")
+        label = "APPROVED" if approved else "REJECTED"
+        logger.log(f"Review {dev.branch}: {label} — {summary}")
         if approved:
             merge_result.approved.append(dev.branch)
             approved_devs.append(dev)
+        else:
+            merge_result.rejected.append(dev.branch)
+            rejected_devs.append(dev)
+            if review_status == "needs_split":
+                merge_result.needs_split.append(dev.branch)
 
-    for dev in approved_devs:
+    for dev in approved_devs + rejected_devs:
         if git_push:
             msg = git_push_branch(str(root), dev.branch)
             merge_result.push_messages.append(msg)
             logger.log(msg)
+    if rejected_devs:
+        retained = ", ".join(d.branch for d in rejected_devs)
+        logger.log(f"Retained rejected branches locally: {retained}")
 
     conflict_branches: list[str] = []
     for dev in approved_devs:

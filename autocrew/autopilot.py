@@ -34,6 +34,9 @@ class AutopilotCycle:
     security_passed: bool = True
     build_complete: bool = False
     debate_dir: str = ""
+    branches_approved: int = 0
+    branches_merged: int = 0
+    branches_rejected: int = 0
 
 
 @dataclass
@@ -67,6 +70,9 @@ class AutopilotResult:
                     "security_passed": c.security_passed,
                     "build_complete": c.build_complete,
                     "debate_dir": c.debate_dir,
+                    "branches_approved": c.branches_approved,
+                    "branches_merged": c.branches_merged,
+                    "branches_rejected": c.branches_rejected,
                 }
                 for c in self.cycles
             ],
@@ -150,16 +156,35 @@ def _is_mission_complete(
     return True, "crew approved + app built + secured + tests OK"
 
 
+def _is_stagnant(cycles: list[AutopilotCycle], stagnant_cycles: int) -> bool:
+    """True when recent cycles show no merges and unchanged completion/security/tests."""
+    if stagnant_cycles <= 0 or len(cycles) < stagnant_cycles:
+        return False
+    window = cycles[-stagnant_cycles:]
+    if any(c.branches_merged > 0 for c in window):
+        return False
+    first = window[0]
+    for cycle in window[1:]:
+        if (
+            cycle.completion_pct != first.completion_pct
+            or cycle.security_passed != first.security_passed
+            or cycle.tests_passed != first.tests_passed
+        ):
+            return False
+    return True
+
+
 def run_autopilot(
     context: ProjectContext,
     squad: Squad,
     project_root: str,
     output_dir: str,
     *,
-    max_cycles: int = 50,
+    max_cycles: int = 10,
     debate_rounds: int = 1,
     build_limit: int = 5,
     min_completion: float = 100.0,
+    stagnant_cycles: int = 3,
     run_tests: bool = True,
     run_security: bool = True,
     llm_security: bool = True,
@@ -257,47 +282,42 @@ def run_autopilot(
             save_tasks(tasks, output_dir, context.project_name)
 
         tasks_built = 0
+        branches_approved = 0
+        branches_merged = 0
+        branches_rejected = 0
         run_build = bool(debate_tasks) or skip_debate
         if run_build and (fixed_tasks is not None or not debate.consensus_reached or skip_debate):
             if on_phase:
                 on_phase(f"build ({min(build_limit, len(tasks))} tasks)")
             try:
+                crew_kwargs = dict(
+                    squad=squad,
+                    tasks=tasks,
+                    context=context,
+                    project_root=root,
+                    task_limit=build_limit,
+                    parallel_git=parallel_git,
+                    git_push=git_push,
+                )
                 if use_llm_build and (dual_router is not None or llm is not None):
                     if dual_router is not None:
-                        run_crew(
-                            squad,
-                            tasks,
-                            context,
-                            project_root=root,
+                        crew_result = run_crew(
+                            **crew_kwargs,
                             use_llm=True,
                             dual_router=dual_router,
-                            task_limit=build_limit,
-                            parallel_git=parallel_git,
-                            git_push=git_push,
                         )
                     else:
-                        run_crew(
-                            squad,
-                            tasks,
-                            context,
-                            project_root=root,
+                        crew_result = run_crew(
+                            **crew_kwargs,
                             use_llm=True,
                             llm_call=llm.complete,
-                            task_limit=build_limit,
-                            parallel_git=parallel_git,
-                            git_push=git_push,
                         )
                 else:
-                    run_crew(
-                        squad,
-                        tasks,
-                        context,
-                        project_root=root,
-                        task_limit=build_limit,
-                        parallel_git=parallel_git,
-                        git_push=git_push,
-                    )
+                    crew_result = run_crew(**crew_kwargs)
                 tasks_built = min(build_limit, len(tasks))
+                branches_approved = crew_result.branches_approved
+                branches_merged = crew_result.branches_merged
+                branches_rejected = crew_result.branches_rejected
             except Exception as exc:
                 if on_phase:
                     on_phase(f"build had errors (continuing): {exc}")
@@ -345,6 +365,9 @@ def run_autopilot(
             security_passed=security_ok,
             build_complete=build_ok,
             debate_dir=debate.debate_dir,
+            branches_approved=branches_approved,
+            branches_merged=branches_merged,
+            branches_rejected=branches_rejected,
         )
         result.cycles.append(cycle_record)
 
@@ -377,6 +400,17 @@ def run_autopilot(
             result.final_completion = report.completion_percentage
             result.tests_passed = tests_ok
             result.stopped_reason = reason
+            break
+
+        if _is_stagnant(result.cycles, stagnant_cycles):
+            result.final_completion = report.completion_percentage
+            result.tests_passed = tests_ok
+            result.security_passed = security_ok
+            result.build_complete = build_ok
+            result.stopped_reason = (
+                f"stagnant: {stagnant_cycles} cycles with no merges and unchanged "
+                f"completion/security/tests — build={build_msg}, security={security_msg}"
+            )
             break
 
         if cycle >= max_cycles:

@@ -1,0 +1,35 @@
+[
+  {
+    "task_id": "remain_user_profile",
+    "title": "Complete User Profile (mobile + API)",
+    "description": "Finish the User Profile feature: PATCH /profile with validation, avatar/name/phone fields in Prisma if missing, mobile profile screen wired to API with edit flow and error states. Do NOT rebuild auth or booking.",
+    "assigned_agent_role": "frontend_developer",
+    "depends_on": [],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Working profile screen and API integration with tests or manual verification steps in a short note.",
+    "context_files": ["docs/product.md", "docs/architecture.md"]
+  },
+  {
+    "task_id": "remain_reviews_backend",
+    "title": "Reviews & Ratings — full backend CRUD",
+    "description": "Complete reviews module in apps/api: POST/GET reviews per business, aggregate rating stats, moderation flags, Prisma Review model migrations if incomplete. Replace any stub/TODO in reviews module.",
+    "assigned_agent_role": "backend_developer",
+    "depends_on": [],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Working review endpoints with validation and role guards.",
+    "context_files": ["docs/product.md", "docs/architecture.md"]
+  },
+  {
+    "task_id": "remain_reviews_frontend",
+    "title": "Reviews & Ratings — mobile submit & display",
+    "description": "Wire SalonReviews and business detail reviews tab to real API: list reviews, submit review after appointment, star rating input, empty states.",
+    "assigned_agent_role": "frontend_developer",
+    "depends_on": ["remain_reviews_backend"],
+    "output_format": "code",
+    "output_path": null,
+    "expected_output": "Users can view and submit reviews on mobile.",
+    "context_files": ["docs/product.md"]
+  }
+]

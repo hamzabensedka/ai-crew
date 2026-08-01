@@ -5,7 +5,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from autocrew.analyzer.project_model import FeatureItem, ProjectContext, ProjectDomain, ProjectType, TechStack
-from autocrew.autopilot import _is_mission_complete, is_build_complete, run_autopilot, run_project_tests
+from autocrew.autopilot import _is_mission_complete, _is_stagnant, is_build_complete, run_autopilot, run_project_tests
+from autocrew.crew.crew_runner import CrewRunResult
 from autocrew.debate.debate_model import DebateResult, DebateRound
 from autocrew.security_audit import SecurityReport
 from autocrew.squad.squad_builder import build_squad
@@ -88,7 +89,7 @@ class TestAutopilot:
 
         monkeypatch.setattr("autocrew.autopilot.run_debate", lambda *a, **k: fake_debate)
         monkeypatch.setattr("autocrew.autopilot.build_tasks_from_debate", lambda *a, **k: [])
-        monkeypatch.setattr("autocrew.autopilot.run_crew", lambda *a, **k: "ok")
+        monkeypatch.setattr("autocrew.autopilot.run_crew", lambda *a, **k: CrewRunResult(summary="ok"))
         monkeypatch.setattr("autocrew.autopilot.run_project_tests", lambda *a, **k: (True, "passed"))
         monkeypatch.setattr(
             "autocrew.autopilot.run_security_audit",
@@ -155,7 +156,7 @@ class TestAutopilot:
 
         monkeypatch.setattr("autocrew.autopilot.run_debate", lambda *a, **k: debate_ok)
         monkeypatch.setattr("autocrew.autopilot.build_tasks_from_debate", lambda *a, **k: [])
-        monkeypatch.setattr("autocrew.autopilot.run_crew", lambda *a, **k: "ok")
+        monkeypatch.setattr("autocrew.autopilot.run_crew", lambda *a, **k: CrewRunResult(summary="ok"))
         monkeypatch.setattr("autocrew.autopilot.run_project_tests", lambda *a, **k: (True, "ok"))
         monkeypatch.setattr("autocrew.autopilot.run_security_audit", fake_security)
         monkeypatch.setattr("autocrew.autopilot.run_llm_security_review", lambda r, *a, **k: r)
@@ -170,3 +171,88 @@ class TestAutopilot:
         )
         assert result.security_passed
         assert len(result.cycles) == 2
+
+    def test_stagnant_detection(self):
+        from autocrew.autopilot import AutopilotCycle
+
+        cycles = [
+            AutopilotCycle(
+                cycle_number=i,
+                consensus_reached=True,
+                total_blockers=0,
+                tasks_built=3,
+                completion_pct=81.0,
+                tests_passed=False,
+                security_passed=False,
+                branches_merged=0,
+            )
+            for i in range(1, 4)
+        ]
+        assert _is_stagnant(cycles, 3)
+        cycles[-1] = AutopilotCycle(
+            cycle_number=3,
+            consensus_reached=True,
+            total_blockers=0,
+            tasks_built=3,
+            completion_pct=85.0,
+            tests_passed=False,
+            security_passed=False,
+            branches_merged=0,
+        )
+        assert not _is_stagnant(cycles, 3)
+
+    def test_autopilot_stops_on_stagnation(self, tmp_path, isolated_output_dirs, monkeypatch):
+        context = ProjectContext(
+            project_type=ProjectType.EXISTING_CODE,
+            project_name="AutoStagnant",
+            domain=ProjectDomain.MOBILE_APP,
+            description="Test stagnation stop",
+            tech_stack=TechStack(frontend=["Expo"], backend=["NestJS"]),
+            features=[
+                FeatureItem(name="Payments", description="Pay", status="partial", priority="high"),
+            ],
+            codebase_path=str(tmp_path),
+            missing_parts=["Stripe checkout"],
+        )
+        squad = build_squad(context)
+        project_root = tmp_path / "proj"
+        project_root.mkdir()
+
+        fake_debate = DebateResult(
+            project_name="AutoStagnant",
+            timestamp="2026-01-01T00:00:00Z",
+            rounds=[],
+            consensus_reached=True,
+            final_plan_path="plan.md",
+            debate_dir=str(isolated_output_dirs / "debate"),
+            action_items=[],
+        )
+
+        monkeypatch.setattr("autocrew.autopilot.run_debate", lambda *a, **k: fake_debate)
+        monkeypatch.setattr(
+            "autocrew.autopilot.run_crew",
+            lambda *a, **k: CrewRunResult(summary="ok", merge_batches=[]),
+        )
+        monkeypatch.setattr("autocrew.autopilot.run_project_tests", lambda *a, **k: (False, "fail"))
+        monkeypatch.setattr(
+            "autocrew.autopilot.run_security_audit",
+            lambda *a, **k: SecurityReport(passed=False, summary="credential"),
+        )
+        monkeypatch.setattr("autocrew.autopilot.run_llm_security_review", lambda r, *a, **k: r)
+        monkeypatch.setattr(
+            "autocrew.autopilot.generate_progress_report",
+            lambda *a, **k: MagicMock(completion_percentage=81.0),
+        )
+
+        result = run_autopilot(
+            context,
+            squad,
+            str(project_root),
+            str(isolated_output_dirs),
+            max_cycles=10,
+            stagnant_cycles=3,
+            fixed_tasks=[],
+            llm_security=False,
+        )
+        assert len(result.cycles) == 3
+        assert "stagnant" in result.stopped_reason

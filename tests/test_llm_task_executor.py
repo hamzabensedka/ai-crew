@@ -113,5 +113,5 @@ class TestLlmTaskExecutor:
             llm_call=fake_llm,
             task_limit=1,
         )
-        assert "LLM" in result
+        assert "LLM" in str(result)
         assert (project_root / "docs" / "product.md").exists()

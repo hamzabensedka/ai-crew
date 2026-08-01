@@ -22,7 +22,7 @@ class TestCrewRunner:
         project_root.mkdir()
 
         result = run_crew(squad, tasks, context, project_root=str(project_root))
-        assert "complete" in result.lower()
+        assert "complete" in str(result).lower()
         assert (project_root / "docs" / "product.md").exists()
 
     @pytest.mark.asyncio
@@ -45,7 +45,7 @@ class TestCrewRunner:
         logger = CrewLogger()
 
         if squad.parallel_groups:
-            results = await _run_parallel_group(
+            results, merge_info = await _run_parallel_group(
                 squad.parallel_groups[0],
                 squad,
                 tasks,
@@ -61,3 +61,4 @@ class TestCrewRunner:
                 git_push=False,
             )
             assert len(results) >= 0
+            assert merge_info is None
