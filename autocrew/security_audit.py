@@ -18,6 +18,11 @@ SECURITY_FILE_GLOBS = ("*.ts", "*.tsx", "*.js", "*.jsx", "*.py", "*.env", "*.jso
 SKIP_DIRS = {".git", "node_modules", "dist", "build", ".nx", "coverage", "__pycache__"}
 
 
+def _is_env_example_placeholder(value: str) -> bool:
+    lower = value.lower()
+    return any(h in lower for h in ("your_", "replace", "example", "changeme", "placeholder", "xxx", "_here"))
+
+
 @dataclass
 class SecurityFinding:
     severity: str
@@ -64,6 +69,10 @@ def _scan_file(path: Path, project_root: Path) -> list[SecurityFinding]:
 
     for pattern, severity, title in SECRET_PATTERNS:
         if pattern.search(content):
+            if path.name in (".env.example", "env.example") or path.name.endswith(".env.example"):
+                match = pattern.search(content)
+                if match and _is_env_example_placeholder(match.group(0)):
+                    continue
             findings.append(SecurityFinding(severity, title, f"Pattern matched in {rel}", rel))
 
     if "apps/api" in rel and path.suffix == ".ts":

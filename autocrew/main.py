@@ -807,6 +807,110 @@ def recover_worktrees_cmd(
     console.print(f"\n[dim]Log:[/dim] {settings.logs_dir}")
 
 
+@app.command("recover-branches")
+def recover_branches_cmd(
+    project_root: str = typer.Option(..., "--root", help="Target git project (e.g. C:\\planity)"),
+    roles: str = typer.Option(
+        "backend-developer,devops-engineer",
+        "--roles",
+        help="Comma-separated agent role slugs to merge (latest session each)",
+    ),
+    session: Optional[str] = typer.Option(
+        None,
+        "--session",
+        help="Session id YYYYMMDD_HHMMSS (default: latest per role)",
+    ),
+    list_only: bool = typer.Option(False, "--list", help="List remote autocrew branches and exit"),
+    push: bool = typer.Option(False, "--push", help="Push base branch after merge + sanitize"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show branches that would merge"),
+) -> None:
+    """Merge latest autocrew agent branches from origin (headless — no UI needed)."""
+    from autocrew.tools.branch_recovery import (
+        _fetch,
+        list_remote_autocrew_branches,
+        pick_branches,
+        recover_agent_branches,
+    )
+
+    root = str(Path(project_root).resolve())
+    role_list = [r.strip().replace("_", "-") for r in roles.split(",") if r.strip()]
+
+    try:
+        _fetch(root)
+    except Exception as exc:
+        console.print(f"[red]git fetch failed:[/red] {exc}")
+        raise typer.Exit(1) from exc
+
+    catalog = list_remote_autocrew_branches(root)
+    if list_only or dry_run:
+        table = Table(title="Remote autocrew branches")
+        table.add_column("Role", style="cyan")
+        table.add_column("Latest branch")
+        table.add_column("Count")
+        for role, branches in sorted(catalog.items()):
+            table.add_row(role, branches[0] if branches else "—", str(len(branches)))
+        console.print(table)
+        picked = pick_branches(catalog, role_list, session=session)
+        if picked:
+            console.print("\n[bold]Would merge:[/bold]")
+            for b in picked:
+                console.print(f"  • {b}")
+        if list_only or dry_run:
+            raise typer.Exit(0)
+
+    console.print(
+        Panel(
+            f"Recovering [bold]{', '.join(role_list)}[/bold] into base branch\n"
+            f"Project: {root}\n"
+            "[dim]Merges use -X theirs on conflicts. Secrets in .env.example are sanitized before commit.[/dim]",
+            title="Branch recovery",
+        )
+    )
+
+    try:
+        result = recover_agent_branches(
+            root,
+            role_list,
+            session=session,
+            merge=True,
+            push=push,
+            sanitize_secrets=True,
+            prefer_incoming=True,
+        )
+    except Exception as exc:
+        console.print(f"[red]Recovery failed:[/red] {exc}")
+        raise typer.Exit(1) from exc
+
+    if result.merged:
+        console.print("\n[bold]Merge results:[/bold]")
+        for attempt in result.merged:
+            color = "green" if attempt.merged else "red"
+            console.print(f"  [{color}]{'OK' if attempt.merged else 'FAIL'}[/{color}] {attempt.branch}: {attempt.message}")
+
+    if result.sanitized:
+        console.print("\n[bold]Secret sanitization:[/bold]")
+        for line in result.sanitized:
+            console.print(f"  • {line}")
+
+    if result.push_messages:
+        console.print("\n[bold]Push:[/bold]")
+        for msg in result.push_messages:
+            console.print(f"  • {msg}")
+
+    if result.skipped:
+        console.print("\n[yellow]Skipped:[/yellow]")
+        for line in result.skipped:
+            console.print(f"  • {line}")
+
+    failed = [m for m in result.merged if not m.merged]
+    if failed:
+        console.print(
+            "\n[yellow]Some merges failed. Branches remain on origin — retry one role at a time:[/yellow]\n"
+            f"  autocrew recover-branches --root {root} --roles backend-developer --push"
+        )
+        raise typer.Exit(1)
+
+
 @app.command()
 def autopilot(
     project_root: Optional[str] = typer.Option(None, "--root", help="Target project root"),

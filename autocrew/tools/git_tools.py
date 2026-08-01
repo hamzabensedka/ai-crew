@@ -133,8 +133,12 @@ def git_has_remote(project_root: str, remote: str = "origin") -> bool:
         return False
 
 
+from autocrew.tools.secret_sanitizer import sanitize_project
+
+
 def git_commit(project_root: str, message: str) -> str:
     try:
+        sanitize_project(project_root)
         repo = _repo(project_root)
         repo.git.add(A=True)
         if not repo.is_dirty(untracked_files=True):
