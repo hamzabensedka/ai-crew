@@ -2,6 +2,23 @@
 
 Run **one batch at a time** instead of the full 13-task list. This keeps diffs reviewable and avoids the 50-cycle spin when merges never land.
 
+## Headless recovery (no UI)
+
+After autopilot rejects backend/devops branches but work exists on GitHub:
+
+```bash
+# 1. See what's on remote
+autocrew recover-branches --root C:\planity --list
+
+# 2. Merge latest backend + devops into master, sanitize secrets, push
+autocrew recover-branches --root C:\planity --roles backend-developer,devops-engineer --push
+
+# 3. One role only if the combined merge conflicts
+autocrew recover-branches --root C:\planity --roles backend-developer --push
+```
+
+Secrets in `.env.example` are replaced with placeholders automatically before commit/push.
+
 ## Recommended order
 
 1. `planity_remaining_batch_reviews.json` — profile + reviews (3 tasks)

@@ -112,7 +112,7 @@ ROLE_TEMPLATES: dict[AgentRole, dict] = {
             "You automate deployments and ensure reliable infrastructure."
         ),
         "tools": ["file_read", "file_write", "run_command", "web_search"],
-        "can_write_to": ["/.github", "/docker", "/infra", "/deploy", "docker-compose.yml", "/docs"],
+        "can_write_to": ["/.github", "/docker", "/infra", "/deploy", "docker-compose.yml", ".env.example", "env.example", "apps/api/.env.example", "/docs"],
         "can_read": ["*"],
         "allow_delegation": False,
     },
